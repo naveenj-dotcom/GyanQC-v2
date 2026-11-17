@@ -1,6 +1,5 @@
 import https from 'https';
 
-// Cache resolved direct Google Drive CDN URLs in memory so range requests don't re-fetch HTML confirmation pages
 const resolvedUrlCache = new Map();
 
 function resolveDirectDriveUrl(fileId, targetUrl, redirectCount = 0) {
@@ -43,12 +42,43 @@ function resolveDirectDriveUrl(fileId, targetUrl, redirectCount = 0) {
           return;
         }
 
-        // We reached the actual direct video stream URL! Discard the 2-byte probe and return the URL.
         driveRes.resume();
         resolve(targetUrl);
       })
       .on('error', reject);
   });
+}
+
+function pipeStream(targetUrl, req, res, redirectCount = 0) {
+  if (redirectCount > 5) {
+    res.status(502).send('Too many redirects');
+    return;
+  }
+
+  const headers = {};
+  if (req.headers.range) headers.Range = req.headers.range;
+
+  https
+    .get(targetUrl, { headers }, (driveRes) => {
+      if (
+        [301, 302, 303, 307, 308].includes(driveRes.statusCode) &&
+        driveRes.headers.location
+      ) {
+        driveRes.resume();
+        pipeStream(driveRes.headers.location, req, res, redirectCount + 1);
+        return;
+      }
+
+      res.status(driveRes.statusCode || 200);
+      ['content-type', 'content-length', 'content-range', 'accept-ranges'].forEach((h) => {
+        if (driveRes.headers[h]) res.setHeader(h, driveRes.headers[h]);
+      });
+
+      driveRes.pipe(res);
+    })
+    .on('error', (err) => {
+      if (!res.headersSent) res.status(500).send(err.message);
+    });
 }
 
 export default async function handler(req, res) {
@@ -67,16 +97,13 @@ export default async function handler(req, res) {
     } else {
       const initialUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
       directUrl = await resolveDirectDriveUrl(fileId, initialUrl);
-      // Cache for 30 minutes
       resolvedUrlCache.set(fileId, {
         url: directUrl,
         expiresAt: Date.now() + 30 * 60 * 1000,
       });
     }
 
-    // Redirect browser directly to Google's high-speed CDN for instant streaming & scrubbing
-    res.setHeader('Cache-Control', 'public, max-age=1800');
-    res.redirect(307, directUrl);
+    pipeStream(directUrl, req, res);
   } catch (err) {
     resolvedUrlCache.delete(fileId);
     res.status(403).send(err.message || 'Could not load Google Drive video.');
