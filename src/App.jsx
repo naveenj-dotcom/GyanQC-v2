@@ -2,26 +2,19 @@ import React, { useEffect, useRef, useState } from "react";
 import ReferenceOverlay from "./ReferenceOverlay";
 import "./App.css";
 
+const DEFAULT_OVERLAY_URL = "/default-overlay.png";
+
 export default function App() {
   const videoRef = useRef(null);
   const stageRef = useRef(null);
   const videoInputRef = useRef(null);
-  const imageInputRef = useRef(null);
 
   const [videoUrl, setVideoUrl] = useState("");
   const [videoName, setVideoName] = useState("");
   const [driveUrl, setDriveUrl] = useState("");
   const [driveError, setDriveError] = useState("");
 
-  const [imageUrl, setImageUrl] = useState("");
-  const [imageName, setImageName] = useState("");
-
   const [overlayVisible, setOverlayVisible] = useState(true);
-  const [tolerance, setTolerance] = useState(100);
-  const [opacity, setOpacity] = useState(80);
-  const [size, setSize] = useState(100);
-  const [horizontal, setHorizontal] = useState(50);
-  const [vertical, setVertical] = useState(50);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [comment, setComment] = useState("");
@@ -77,14 +70,6 @@ export default function App() {
     };
   }, [videoUrl]);
 
-  useEffect(() => {
-    return () => {
-      if (imageUrl && imageUrl.startsWith("blob:")) {
-        URL.revokeObjectURL(imageUrl);
-      }
-    };
-  }, [imageUrl]);
-
   const handleVideoUpload = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -123,21 +108,6 @@ export default function App() {
     setCurrentTime(0);
     setFeedback([]);
     setStatus("Pending");
-  };
-
-  const handleImageUpload = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Please select a valid image.");
-      return;
-    }
-
-    setImageUrl(URL.createObjectURL(file));
-    setImageName(file.name);
-    setOverlayVisible(true);
-    event.target.value = "";
   };
 
   const formatTime = (seconds) => {
@@ -211,15 +181,6 @@ export default function App() {
     videoRef.current.play().catch(() => {});
   };
 
-  const resetOverlay = () => {
-    setTolerance(100);
-    setOpacity(80);
-    setSize(100);
-    setHorizontal(50);
-    setVertical(50);
-    setOverlayVisible(true);
-  };
-
   return (
     <main className="qc-app">
       <header className="app-header">
@@ -291,13 +252,13 @@ export default function App() {
                   />
 
                   <ReferenceOverlay
-                    src={imageUrl}
+                    src={DEFAULT_OVERLAY_URL}
                     visible={overlayVisible}
-                    tolerance={tolerance}
-                    opacity={opacity}
-                    size={size}
-                    horizontal={horizontal}
-                    vertical={vertical}
+                    tolerance={100}
+                    opacity={80}
+                    size={100}
+                    horizontal={50}
+                    vertical={50}
                   />
 
                   <button
@@ -386,10 +347,10 @@ export default function App() {
 
         <section className="right-column">
           <div className="panel overlay-panel">
-            <div className="panel-heading">
+            <div className="panel-heading" style={{ marginBottom: 0 }}>
               <div>
                 <h3>Reference Image Overlay</h3>
-                <p>Compare your video with a visual reference.</p>
+                <p>Default 9:16 safe-zone reference active.</p>
               </div>
 
               <button
@@ -400,126 +361,6 @@ export default function App() {
                 }
               >
                 {overlayVisible ? "Hide Overlay" : "Show Overlay"}
-              </button>
-            </div>
-
-            <input
-              ref={imageInputRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={handleImageUpload}
-            />
-
-            <div className="image-upload-row">
-              <div className="image-file-info">
-                <span className="image-icon">▧</span>
-                <div>
-                  <strong>
-                    {imageName || "No reference image selected"}
-                  </strong>
-                  <span>9:16 portrait reference recommended</span>
-                </div>
-              </div>
-
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => imageInputRef.current?.click()}
-              >
-                Change Reference Image
-              </button>
-            </div>
-
-            <div className="settings-grid">
-              <div className="slider-control">
-                <div className="slider-label">
-                  <label>Green Removal Tolerance</label>
-                  <strong>{tolerance}</strong>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="255"
-                  value={tolerance}
-                  onChange={(e) =>
-                    setTolerance(Number(e.target.value))
-                  }
-                />
-              </div>
-
-              <div className="slider-control">
-                <div className="slider-label">
-                  <label>Opacity</label>
-                  <strong>{opacity}%</strong>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={opacity}
-                  onChange={(e) =>
-                    setOpacity(Number(e.target.value))
-                  }
-                />
-              </div>
-
-              <div className="slider-control">
-                <div className="slider-label">
-                  <label>Overlay Size</label>
-                  <strong>{size}%</strong>
-                </div>
-                <input
-                  type="range"
-                  min="50"
-                  max="150"
-                  value={size}
-                  onChange={(e) =>
-                    setSize(Number(e.target.value))
-                  }
-                />
-              </div>
-
-              <div className="slider-control">
-                <div className="slider-label">
-                  <label>Horizontal Position</label>
-                  <strong>{horizontal}%</strong>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={horizontal}
-                  onChange={(e) =>
-                    setHorizontal(Number(e.target.value))
-                  }
-                />
-              </div>
-
-              <div className="slider-control">
-                <div className="slider-label">
-                  <label>Vertical Position</label>
-                  <strong>{vertical}%</strong>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={vertical}
-                  onChange={(e) =>
-                    setVertical(Number(e.target.value))
-                  }
-                />
-              </div>
-            </div>
-
-            <div className="overlay-footer">
-              <button
-                className="secondary-button"
-                type="button"
-                onClick={resetOverlay}
-              >
-                Reset Overlay Settings
               </button>
             </div>
           </div>

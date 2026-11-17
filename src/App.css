@@ -181,7 +181,7 @@ button:disabled {
   width: 100%;
   height: 100%;
   display: block;
-  object-fit: fill;
+  object-fit: contain;
   background: #080b12;
   z-index: 1;
 }
@@ -598,42 +598,50 @@ button:disabled {
   }
 }
 
-/* Portrait fullscreen */
-.video-stage:fullscreen {
-  position: fixed !important;
-  inset: 0 !important;
-  width: min(100vw, 56.25vh) !important;
-  height: min(100vh, 177.7778vw) !important;
-  margin: auto !important;
+/* Portrait fullscreen: keep stage full-viewport black and center exact 9:16 video + overlay together */
+.video-stage:fullscreen,
+.video-stage:-webkit-full-screen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  margin: 0 !important;
   padding: 0 !important;
-  transform: none !important;
-  aspect-ratio: 9 / 16;
-  border: 0;
-  border-radius: 0;
-  overflow: hidden;
-  background: #000;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+  position: relative !important;
+  overflow: hidden !important;
   isolation: isolate;
 }
 
-.video-stage:fullscreen .review-video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
+.video-stage:fullscreen .review-video,
+.video-stage:-webkit-full-screen .review-video {
+  position: absolute !important;
+  inset: 0 !important;
+  margin: auto !important;
+  width: min(100vw, 56.25vh) !important;
+  height: min(100vh, 177.7778vw) !important;
+  object-fit: contain !important;
+  background: #000 !important;
   z-index: 1;
 }
 
-.video-stage:fullscreen .reference-overlay-layer {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+.video-stage:fullscreen .reference-overlay-layer,
+.video-stage:-webkit-full-screen .reference-overlay-layer {
+  position: absolute !important;
+  inset: 0 !important;
+  margin: auto !important;
+  width: min(100vw, 56.25vh) !important;
+  height: min(100vh, 177.7778vw) !important;
+  overflow: hidden !important;
+  pointer-events: none;
   z-index: 3;
 }
 
-.video-stage:fullscreen .fullscreen-button {
+.video-stage:fullscreen .fullscreen-button,
+.video-stage:-webkit-full-screen .fullscreen-button {
   opacity: 1;
   z-index: 10;
 }
