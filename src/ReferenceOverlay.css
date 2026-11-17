@@ -1,0 +1,69 @@
+
+.reference-overlay-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.reference-overlay-image {
+  position: absolute;
+  display: block;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Normal video mode */
+
+.video-stage .reference-overlay-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+}
+
+/* Fullscreen mode */
+
+.video-stage:fullscreen .reference-overlay-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+  overflow: hidden;
+}
+
+.video-stage:fullscreen .reference-overlay-image {
+  position: absolute;
+  object-fit: fill;
+  max-width: none;
+  max-height: none;
+}
+
+/* Keep controls accessible */
+
+.video-stage .fullscreen-button {
+  z-index: 10;
+}
+
+.video-stage .review-video {
+  z-index: 1;
+}
+.video-stage:fullscreen img,
+.video-stage:fullscreen canvas {
+  width: auto !important;
+  height: 100% !important;
+  aspect-ratio: 9 / 16;
+  left: 50% !important;
+  top: 0 !important;
+  transform: translateX(-50%) !important;
+}

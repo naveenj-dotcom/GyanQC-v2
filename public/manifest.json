@@ -1,0 +1,8 @@
+{
+  "name": "GyanQC",
+  "short_name": "GyanQC",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e3a8a"
+}
