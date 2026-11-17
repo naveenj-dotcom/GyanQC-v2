@@ -9,4 +9,5 @@ self.addEventListener('message', (event) => {
 });
 
 self.addEventListener('fetch', () => {});
-// version 3
+// version 4
+

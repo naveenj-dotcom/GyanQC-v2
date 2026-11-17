@@ -231,6 +231,7 @@ export default function App() {
                     ref={videoRef}
                     className="review-video"
                     src={videoUrl}
+                    preload="auto"
                     controls
                     playsInline
                     controlsList="nofullscreen noremoteplayback"

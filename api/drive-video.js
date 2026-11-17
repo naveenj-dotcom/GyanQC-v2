@@ -1,28 +1,25 @@
 import https from 'https';
 
-export default function handler(req, res) {
-  const fileId = req.query.id;
-  if (!fileId) {
-    res.status(400).send('Missing file ID');
-    return;
-  }
+// Cache resolved direct Google Drive CDN URLs in memory so range requests don't re-fetch HTML confirmation pages
+const resolvedUrlCache = new Map();
 
-  const streamFromUrl = (targetUrl, redirectCount = 0) => {
+function resolveDirectDriveUrl(fileId, targetUrl, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
     if (redirectCount > 5) {
-      res.status(502).send('Too many redirects');
+      reject(new Error('Too many redirects'));
       return;
     }
 
-    const headers = {};
-    if (req.headers.range) headers.Range = req.headers.range;
-
     https
-      .get(targetUrl, { headers }, (driveRes) => {
+      .get(targetUrl, { headers: { Range: 'bytes=0-1' } }, (driveRes) => {
         if (
           [301, 302, 303, 307, 308].includes(driveRes.statusCode) &&
           driveRes.headers.location
         ) {
-          streamFromUrl(driveRes.headers.location, redirectCount + 1);
+          driveRes.resume();
+          resolve(
+            resolveDirectDriveUrl(fileId, driveRes.headers.location, redirectCount + 1)
+          );
           return;
         }
 
@@ -38,23 +35,50 @@ export default function handler(req, res) {
               const nextUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=${confirmMatch[1]}${
                 uuidMatch ? `&uuid=${uuidMatch[1]}` : ''
               }`;
-              streamFromUrl(nextUrl, redirectCount + 1);
+              resolve(resolveDirectDriveUrl(fileId, nextUrl, redirectCount + 1));
             } else {
-              res.status(403).send('Ensure Drive sharing is set to Anyone with the link.');
+              reject(new Error('Ensure Drive sharing is set to Anyone with the link.'));
             }
           });
           return;
         }
 
-        res.status(driveRes.statusCode || 200);
-        ['content-type', 'content-length', 'content-range', 'accept-ranges'].forEach((h) => {
-          if (driveRes.headers[h]) res.setHeader(h, driveRes.headers[h]);
-        });
-
-        driveRes.pipe(res);
+        // We reached the actual direct video stream URL! Discard the 2-byte probe and return the URL.
+        driveRes.resume();
+        resolve(targetUrl);
       })
-      .on('error', (err) => res.status(500).send(err.message));
-  };
+      .on('error', reject);
+  });
+}
 
-  streamFromUrl(`https://drive.usercontent.google.com/download?id=${fileId}&export=download`);
+export default async function handler(req, res) {
+  const fileId = req.query.id;
+  if (!fileId) {
+    res.status(400).send('Missing file ID');
+    return;
+  }
+
+  try {
+    const cached = resolvedUrlCache.get(fileId);
+    let directUrl;
+
+    if (cached && cached.expiresAt > Date.now()) {
+      directUrl = cached.url;
+    } else {
+      const initialUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
+      directUrl = await resolveDirectDriveUrl(fileId, initialUrl);
+      // Cache for 30 minutes
+      resolvedUrlCache.set(fileId, {
+        url: directUrl,
+        expiresAt: Date.now() + 30 * 60 * 1000,
+      });
+    }
+
+    // Redirect browser directly to Google's high-speed CDN for instant streaming & scrubbing
+    res.setHeader('Cache-Control', 'public, max-age=1800');
+    res.redirect(307, directUrl);
+  } catch (err) {
+    resolvedUrlCache.delete(fileId);
+    res.status(403).send(err.message || 'Could not load Google Drive video.');
+  }
 }
