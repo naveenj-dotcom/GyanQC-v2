@@ -13,6 +13,7 @@ export default function App() {
   const [videoName, setVideoName] = useState("");
   const [driveUrl, setDriveUrl] = useState("");
   const [driveError, setDriveError] = useState("");
+  const [isDriveEmbed, setIsDriveEmbed] = useState(false);
 
   const [overlayVisible, setOverlayVisible] = useState(true);
 
@@ -80,6 +81,7 @@ export default function App() {
     }
 
     setDriveError("");
+    setIsDriveEmbed(false);
     setVideoUrl(URL.createObjectURL(file));
     setVideoName(file.name);
     setCurrentTime(0);
@@ -103,7 +105,8 @@ export default function App() {
     }
 
     const fileId = match[1];
-    setVideoUrl(`/api/drive-video?id=${fileId}`);
+    setIsDriveEmbed(true);
+    setVideoUrl(`https://drive.google.com/file/d/${fileId}/preview`);
     setVideoName(`Google Drive Video (${fileId.slice(0, 6)}...)`);
     setCurrentTime(0);
     setFeedback([]);
@@ -140,13 +143,13 @@ export default function App() {
 
   const addFeedback = () => {
     const message = comment.trim();
-    if (!message || !videoRef.current) return;
+    if (!message || !videoUrl) return;
 
     setFeedback((previous) => [
       ...previous,
       {
         id: Date.now(),
-        time: videoRef.current.currentTime,
+        time: videoRef.current ? videoRef.current.currentTime : currentTime,
         message,
       },
     ]);
@@ -227,40 +230,43 @@ export default function App() {
             <div ref={stageRef} className="video-stage">
               {videoUrl ? (
                 <>
-                  <video
-                    ref={videoRef}
-                    className="review-video"
-                    src={videoUrl}
-                    preload="auto"
-                    controls
-                    playsInline
-                    controlsList="nofullscreen noremoteplayback"
-                    disablePictureInPicture
-                    onTimeUpdate={() =>
-                      setCurrentTime(
-                        videoRef.current?.currentTime || 0
-                      )
-                    }
-                    onError={() => {
-                      if (videoUrl.startsWith("/api/drive-video")) {
-                        alert(
-                          "Could not load Google Drive video. Please check that sharing is set to 'Anyone with the link'."
-                        );
-                        setVideoUrl("");
-                        setVideoName("");
+                  {isDriveEmbed ? (
+                    <iframe
+                      className="review-video"
+                      src={videoUrl}
+                      title={videoName}
+                      allow="autoplay; fullscreen"
+                      style={{ border: "none", width: "100%", height: "100%" }}
+                    />
+                  ) : (
+                    <video
+                      ref={videoRef}
+                      className="review-video"
+                      src={videoUrl}
+                      preload="auto"
+                      controls
+                      playsInline
+                      controlsList="nofullscreen noremoteplayback"
+                      disablePictureInPicture
+                      onTimeUpdate={() =>
+                        setCurrentTime(
+                          videoRef.current?.currentTime || 0
+                        )
                       }
-                    }}
-                  />
+                    />
+                  )}
 
-                  <ReferenceOverlay
-                    src={DEFAULT_OVERLAY_URL}
-                    visible={overlayVisible}
-                    tolerance={100}
-                    opacity={80}
-                    size={100}
-                    horizontal={50}
-                    vertical={50}
-                  />
+                  <div style={{ pointerEvents: "none" }}>
+                    <ReferenceOverlay
+                      src={DEFAULT_OVERLAY_URL}
+                      visible={overlayVisible}
+                      tolerance={100}
+                      opacity={80}
+                      size={100}
+                      horizontal={50}
+                      vertical={50}
+                    />
+                  </div>
 
                   <button
                     className="fullscreen-button"
@@ -338,6 +344,7 @@ export default function App() {
                   setVideoUrl("");
                   setVideoName("");
                   setDriveUrl("");
+                  setIsDriveEmbed(false);
                 }}
               >
                 {videoUrl ? "Change Video" : "Choose Video"}
