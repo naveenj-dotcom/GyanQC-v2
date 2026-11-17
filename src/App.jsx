@@ -8,12 +8,13 @@ export default function App() {
   const videoRef = useRef(null);
   const stageRef = useRef(null);
   const videoInputRef = useRef(null);
+  const lastSecondRef = useRef(-1);
 
   const [videoUrl, setVideoUrl] = useState("");
   const [videoName, setVideoName] = useState("");
   const [driveUrl, setDriveUrl] = useState("");
   const [driveError, setDriveError] = useState("");
-  const [isDriveEmbed, setIsDriveEmbed] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
 
   const [overlayVisible, setOverlayVisible] = useState(true);
 
@@ -81,7 +82,8 @@ export default function App() {
     }
 
     setDriveError("");
-    setIsDriveEmbed(false);
+    setIsBuffering(false);
+    lastSecondRef.current = -1;
     setVideoUrl(URL.createObjectURL(file));
     setVideoName(file.name);
     setCurrentTime(0);
@@ -105,8 +107,9 @@ export default function App() {
     }
 
     const fileId = match[1];
-    setIsDriveEmbed(true);
-    setVideoUrl(`https://drive.google.com/file/d/${fileId}/preview`);
+    setIsBuffering(true);
+    lastSecondRef.current = -1;
+    setVideoUrl(`/api/drive-video?id=${fileId}`);
     setVideoName(`Google Drive Video (${fileId.slice(0, 6)}...)`);
     setCurrentTime(0);
     setFeedback([]);
@@ -181,6 +184,8 @@ export default function App() {
     if (!videoRef.current) return;
 
     videoRef.current.currentTime = time;
+    lastSecondRef.current = Math.floor(time);
+    setCurrentTime(time);
     videoRef.current.play().catch(() => {});
   };
 
@@ -230,31 +235,39 @@ export default function App() {
             <div ref={stageRef} className="video-stage">
               {videoUrl ? (
                 <>
-                  {isDriveEmbed ? (
-                    <iframe
-                      className="review-video"
-                      src={videoUrl}
-                      title={videoName}
-                      allow="autoplay; fullscreen"
-                      style={{ border: "none", width: "100%", height: "100%" }}
-                    />
-                  ) : (
-                    <video
-                      ref={videoRef}
-                      className="review-video"
-                      src={videoUrl}
-                      preload="auto"
-                      controls
-                      playsInline
-                      controlsList="nofullscreen noremoteplayback"
-                      disablePictureInPicture
-                      onTimeUpdate={() =>
-                        setCurrentTime(
-                          videoRef.current?.currentTime || 0
-                        )
+                  <video
+                    ref={videoRef}
+                    className="review-video"
+                    src={videoUrl}
+                    preload="auto"
+                    controls
+                    playsInline
+                    controlsList="nofullscreen noremoteplayback"
+                    disablePictureInPicture
+                    style={{
+                      transform: "translateZ(0)",
+                      willChange: "transform",
+                    }}
+                    onWaiting={() => setIsBuffering(true)}
+                    onCanPlay={() => setIsBuffering(false)}
+                    onPlaying={() => setIsBuffering(false)}
+                    onTimeUpdate={() => {
+                      const t = videoRef.current?.currentTime || 0;
+                      const wholeSecond = Math.floor(t);
+                      if (wholeSecond !== lastSecondRef.current) {
+                        lastSecondRef.current = wholeSecond;
+                        setCurrentTime(t);
                       }
-                    />
-                  )}
+                    }}
+                    onError={() => {
+                      setIsBuffering(false);
+                      if (videoUrl.startsWith("/api/drive-video")) {
+                        setDriveError(
+                          "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
+                        );
+                      }
+                    }}
+                  />
 
                   <div style={{ pointerEvents: "none" }}>
                     <ReferenceOverlay
@@ -332,7 +345,9 @@ export default function App() {
                 <strong>{videoName || "No video selected"}</strong>
                 <span>
                   {videoUrl
-                    ? "Ready for quality review"
+                    ? isBuffering
+                      ? "Buffering video stream..."
+                      : "Ready for quality review"
                     : "Upload your video or paste Drive link"}
                 </span>
               </div>
@@ -344,7 +359,9 @@ export default function App() {
                   setVideoUrl("");
                   setVideoName("");
                   setDriveUrl("");
-                  setIsDriveEmbed(false);
+                  setDriveError("");
+                  setIsBuffering(false);
+                  setCurrentTime(0);
                 }}
               >
                 {videoUrl ? "Change Video" : "Choose Video"}

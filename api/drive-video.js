@@ -1,84 +1,113 @@
 import https from 'https';
 
-// Cache resolved direct Google Drive CDN URLs in memory so range requests don't re-fetch HTML confirmation pages
-const resolvedUrlCache = new Map();
+const keepAliveAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 15,
+});
 
-function resolveDirectDriveUrl(fileId, targetUrl, redirectCount = 0) {
-  return new Promise((resolve, reject) => {
-    if (redirectCount > 5) {
-      reject(new Error('Too many redirects'));
-      return;
-    }
-
-    https
-      .get(targetUrl, { headers: { Range: 'bytes=0-1' } }, (driveRes) => {
-        if (
-          [301, 302, 303, 307, 308].includes(driveRes.statusCode) &&
-          driveRes.headers.location
-        ) {
-          driveRes.resume();
-          resolve(
-            resolveDirectDriveUrl(fileId, driveRes.headers.location, redirectCount + 1)
-          );
-          return;
-        }
-
-        const contentType = driveRes.headers['content-type'] || '';
-        if (contentType.includes('text/html')) {
-          let html = '';
-          driveRes.on('data', (chunk) => (html += chunk));
-          driveRes.on('end', () => {
-            const confirmMatch = html.match(/confirm=([0-9A-Za-z_-]+)/);
-            const uuidMatch = html.match(/name="uuid"\s+value="([^"]+)"/);
-
-            if (confirmMatch) {
-              const nextUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=${confirmMatch[1]}${
-                uuidMatch ? `&uuid=${uuidMatch[1]}` : ''
-              }`;
-              resolve(resolveDirectDriveUrl(fileId, nextUrl, redirectCount + 1));
-            } else {
-              reject(new Error('Ensure Drive sharing is set to Anyone with the link.'));
-            }
-          });
-          return;
-        }
-
-        // We reached the actual direct video stream URL! Discard the 2-byte probe and return the URL.
-        driveRes.resume();
-        resolve(targetUrl);
-      })
-      .on('error', reject);
-  });
-}
-
-export default async function handler(req, res) {
+export default function handler(req, res) {
   const fileId = req.query.id;
+
   if (!fileId) {
     res.status(400).send('Missing file ID');
     return;
   }
 
-  try {
-    const cached = resolvedUrlCache.get(fileId);
-    let directUrl;
-
-    if (cached && cached.expiresAt > Date.now()) {
-      directUrl = cached.url;
-    } else {
-      const initialUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download`;
-      directUrl = await resolveDirectDriveUrl(fileId, initialUrl);
-      // Cache for 30 minutes
-      resolvedUrlCache.set(fileId, {
-        url: directUrl,
-        expiresAt: Date.now() + 30 * 60 * 1000,
-      });
+  const streamFromUrl = (targetUrl, redirectCount = 0, triedFallback = false) => {
+    if (redirectCount > 6) {
+      res.status(502).send('Too many redirects');
+      return;
     }
 
-    // Redirect browser directly to Google's high-speed CDN for instant streaming & scrubbing
-    res.setHeader('Cache-Control', 'public, max-age=1800');
-    res.redirect(307, directUrl);
-  } catch (err) {
-    resolvedUrlCache.delete(fileId);
-    res.status(403).send(err.message || 'Could not load Google Drive video.');
-  }
+    const headers = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    };
+    if (req.headers.range) {
+      headers.Range = req.headers.range;
+    }
+
+    https
+      .get(targetUrl, { headers, agent: keepAliveAgent }, (driveRes) => {
+        if (
+          [301, 302, 303, 307, 308].includes(driveRes.statusCode) &&
+          driveRes.headers.location
+        ) {
+          const nextLocation = new URL(
+            driveRes.headers.location,
+            targetUrl
+          ).toString();
+          streamFromUrl(nextLocation, redirectCount + 1, triedFallback);
+          return;
+        }
+
+        const contentType = driveRes.headers['content-type'] || '';
+
+        if (contentType.includes('text/html')) {
+          let html = '';
+          driveRes.on('data', (chunk) => (html += chunk));
+          driveRes.on('end', () => {
+            const confirmMatch =
+              html.match(/name="confirm"\s+value="([^"]+)"/) ||
+              html.match(/confirm=([0-9A-Za-z_-]+)/);
+            const uuidMatch = html.match(/name="uuid"\s+value="([^"]+)"/);
+
+            if (confirmMatch || uuidMatch) {
+              const confirmVal = confirmMatch ? confirmMatch[1] : 't';
+              const nextUrl = `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=${confirmVal}${
+                uuidMatch ? `&uuid=${uuidMatch[1]}` : ''
+              }`;
+              streamFromUrl(nextUrl, redirectCount + 1, triedFallback);
+            } else if (!triedFallback) {
+              streamFromUrl(
+                `https://drive.google.com/uc?export=download&id=${fileId}`,
+                redirectCount + 1,
+                true
+              );
+            } else {
+              res
+                .status(403)
+                .send(
+                  'Blocked by Google Drive: File must be "Anyone with the link" with downloading enabled.'
+                );
+            }
+          });
+          return;
+        }
+
+        res.statusCode = driveRes.statusCode || 200;
+        res.setHeader(
+          'Content-Type',
+          contentType && contentType !== 'application/octet-stream'
+            ? contentType
+            : 'video/mp4'
+        );
+        if (driveRes.headers['content-length']) {
+          res.setHeader('Content-Length', driveRes.headers['content-length']);
+        }
+        if (driveRes.headers['content-range']) {
+          res.setHeader('Content-Range', driveRes.headers['content-range']);
+        }
+        res.setHeader(
+          'Accept-Ranges',
+          driveRes.headers['accept-ranges'] || 'bytes'
+        );
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+
+        req.on('close', () => {
+          driveRes.destroy();
+        });
+
+        driveRes.pipe(res);
+      })
+      .on('error', (err) => {
+        if (!res.headersSent) {
+          res.status(500).send(err.message);
+        }
+      });
+  };
+
+  streamFromUrl(
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`
+  );
 }
