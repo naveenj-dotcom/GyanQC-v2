@@ -8,6 +8,17 @@ const DEFAULT_OVERLAY_URL = '/default-overlay.png';
 export default function CreatorDashboard({ currentUser, show: initialShow, overlayUrl }) {
   const activeOverlay = overlayUrl || DEFAULT_OVERLAY_URL;
 
+  // Track mobile viewport (< 768px) for clean touch-friendly stacking
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   // Home view launcher: 'home' | 'calendar' | 'shows' | 'player' | 'reports'
   const [activeView, setActiveView] = useState('home');
 
@@ -421,35 +432,62 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
     calendarCells.push({ empty: false, day, dateIso, items: itemsForDay, key: dateIso });
   }
 
+  // Responsive input style (16px font on mobile prevents iOS/Android auto-zoom)
+  const responsiveInputStyle = {
+    ...styles.input,
+    height: isMobile ? '44px' : '40px',
+    fontSize: isMobile ? '16px' : '14px',
+  };
+
   // =========================================================================
   // HOME LAUNCHER SCREEN (1. Calendar | 2. Active Shows | 3. Player | 4. Reports)
   // =========================================================================
   if (activeView === 'home') {
     return (
-      <div style={{ maxWidth: '1040px', margin: '44px auto', padding: '0 20px' }}>
+      <div
+        style={{
+          maxWidth: '1040px',
+          margin: isMobile ? '20px auto' : '44px auto',
+          padding: isMobile ? '0 14px' : '0 20px',
+        }}
+      >
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
           <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+        <div style={{ textAlign: 'center', marginBottom: isMobile ? '22px' : '32px' }}>
           <span style={styles.showBadge}>
             SHOW ID: {currentUser?.show_id || selectedShow?.show_id} · {activeShows.length} ACTIVE{' '}
             {activeShows.length === 1 ? 'SHOW' : 'SHOWS'}
           </span>
-          <h1 style={{ margin: '12px 0 6px', fontSize: '28px', color: '#0f172a' }}>
+          <h1
+            style={{
+              margin: '12px 0 6px',
+              fontSize: isMobile ? '22px' : '28px',
+              color: '#0f172a',
+            }}
+          >
             Welcome, {currentUser?.full_name || selectedShow?.creator_name}
           </h1>
-          <p style={{ margin: 0, fontSize: '15px', color: '#64748b' }}>
+          <p style={{ margin: 0, fontSize: isMobile ? '14px' : '15px', color: '#64748b' }}>
             Select a workspace option below
           </p>
         </div>
 
-        <div style={styles.homeGrid}>
+        <div
+          style={{
+            ...styles.homeGrid,
+            gap: isMobile ? '12px' : '20px',
+          }}
+        >
           {/* 1. Calendar */}
           <button
             type="button"
             onClick={() => setActiveView('calendar')}
-            style={styles.homeCard}
+            style={{
+              ...styles.homeCard,
+              padding: isMobile ? '22px 16px' : '34px 22px',
+            }}
           >
             <span style={styles.tabNumber}>1</span>
             <strong style={styles.tabTitle}>Calendar</strong>
@@ -462,7 +500,10 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
           <button
             type="button"
             onClick={() => setActiveView('shows')}
-            style={styles.homeCard}
+            style={{
+              ...styles.homeCard,
+              padding: isMobile ? '22px 16px' : '34px 22px',
+            }}
           >
             <span style={styles.tabNumber}>2</span>
             <strong style={styles.tabTitle}>Active Shows</strong>
@@ -475,7 +516,10 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
           <button
             type="button"
             onClick={() => setActiveView('player')}
-            style={styles.homeCard}
+            style={{
+              ...styles.homeCard,
+              padding: isMobile ? '22px 16px' : '34px 22px',
+            }}
           >
             <span style={styles.tabNumber}>3</span>
             <strong style={styles.tabTitle}>QC Reference Player</strong>
@@ -492,7 +536,10 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
               loadAllShowEpisodes(activeShows);
               loadCalendar(activeShows);
             }}
-            style={styles.homeCard}
+            style={{
+              ...styles.homeCard,
+              padding: isMobile ? '22px 16px' : '34px 22px',
+            }}
           >
             <span style={{ ...styles.tabNumber, backgroundColor: '#15803d' }}>4</span>
             <strong style={styles.tabTitle}>Reports</strong>
@@ -506,18 +553,65 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
   }
 
   return (
-    <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px' }}>
+    <div
+      style={{
+        maxWidth: '1240px',
+        margin: '0 auto',
+        padding: isMobile ? '12px' : '20px',
+      }}
+    >
       {/* Top Navigation Bar when inside any tab */}
-      <div style={styles.topSubNav}>
-        <button
-          type="button"
-          onClick={() => setActiveView('home')}
-          style={styles.homeBackBtn}
+      <div
+        style={{
+          ...styles.topSubNav,
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : 'center',
+          padding: isMobile ? '10px' : '10px 14px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+          }}
         >
-          🏠 Home
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('home')}
+            style={styles.homeBackBtn}
+          >
+            🏠 Home
+          </button>
 
-        <div style={styles.navPillGroup}>
+          {isMobile && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
+              <button
+                type="button"
+                onClick={() => {
+                  refreshActiveShows();
+                  if (selectedShow) loadEpisodes(selectedShow);
+                  loadAllShowEpisodes(activeShows);
+                  loadCalendar(activeShows);
+                }}
+                className="secondary-button"
+                style={{ padding: '7px 12px', fontSize: '13px' }}
+              >
+                ↻ Refresh
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div
+          style={{
+            ...styles.navPillGroup,
+            display: isMobile ? 'grid' : 'flex',
+            gridTemplateColumns: isMobile ? '1fr 1fr' : undefined,
+          }}
+        >
           <button
             type="button"
             onClick={() => setActiveView('calendar')}
@@ -530,14 +624,14 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
             onClick={() => setActiveView('shows')}
             style={activeView === 'shows' ? styles.navPillActive : styles.navPill}
           >
-            2. Active Shows ({activeShows.length})
+            2. Shows ({activeShows.length})
           </button>
           <button
             type="button"
             onClick={() => setActiveView('player')}
             style={activeView === 'player' ? styles.navPillActive : styles.navPill}
           >
-            3. Reference Player
+            3. Player
           </button>
           <button
             type="button"
@@ -552,29 +646,31 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
-          <button
-            type="button"
-            onClick={() => {
-              refreshActiveShows();
-              if (selectedShow) loadEpisodes(selectedShow);
-              loadAllShowEpisodes(activeShows);
-              loadCalendar(activeShows);
-            }}
-            className="secondary-button"
-            style={{ padding: '7px 12px', fontSize: '13px' }}
-          >
-            ↻ Refresh
-          </button>
-        </div>
+        {!isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
+            <button
+              type="button"
+              onClick={() => {
+                refreshActiveShows();
+                if (selectedShow) loadEpisodes(selectedShow);
+                loadAllShowEpisodes(activeShows);
+                loadCalendar(activeShows);
+              }}
+              className="secondary-button"
+              style={{ padding: '7px 12px', fontSize: '13px' }}
+            >
+              ↻ Refresh
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ===================================================================== */}
       {/* OPTION 1: MONTHLY CALENDAR                                            */}
       {/* ===================================================================== */}
       {activeView === 'calendar' && (
-        <div className="panel" style={{ marginTop: '16px' }}>
+        <div className="panel" style={{ marginTop: '14px', padding: isMobile ? '14px' : undefined }}>
           <div className="panel-heading">
             <div>
               <h3>Monthly Show Calendar — {monthLabel}</h3>
@@ -584,7 +680,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
               </p>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
                 Select Month:
               </label>
@@ -592,7 +688,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                 type="month"
                 value={selectedMonth}
                 onChange={(e) => setSelectedMonth(e.target.value)}
-                style={{ ...styles.input, width: '175px' }}
+                style={{ ...responsiveInputStyle, width: isMobile ? '100%' : '175px' }}
               />
             </div>
           </div>
@@ -601,51 +697,55 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
             <p style={{ color: '#64748b' }}>Loading monthly calendar...</p>
           ) : (
             <>
-              <div style={styles.weekHeaderGrid}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <div key={d} style={styles.weekDayHeader}>
-                    {d}
-                  </div>
-                ))}
-              </div>
-
-              <div style={styles.calendarGrid}>
-                {calendarCells.map((cell) =>
-                  cell.empty ? (
-                    <div key={cell.key} style={styles.emptyCalendarCell} />
-                  ) : (
-                    <div
-                      key={cell.key}
-                      style={{
-                        ...styles.calendarCell,
-                        backgroundColor: cell.items.length > 0 ? '#eff6ff' : '#ffffff',
-                        borderColor: cell.items.length > 0 ? '#93c5fd' : '#e2e8f0',
-                      }}
-                    >
-                      <span style={styles.dayNumber}>{cell.day}</span>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                        {cell.items.map((item) => {
-                          const showObj = activeShows.find((s) => s.id === item.show_uuid);
-                          return (
-                            <div key={item.id} style={styles.calendarEventPill}>
-                              {activeShows.length > 1 && showObj && (
-                                <span style={{ display: 'block', fontSize: '9px', opacity: 0.85 }}>
-                                  {showObj.show_name}
-                                </span>
-                              )}
-                              <strong>{item.episode_label}</strong>
-                              {item.notes && (
-                                <span style={{ display: 'block', fontSize: '10px', opacity: 0.9 }}>
-                                  {item.notes}
-                                </span>
-                              )}
-                            </div>
-                          );
-                        })}
+              <div style={{ overflowX: 'auto' }}>
+                <div style={{ minWidth: isMobile ? '640px' : 'auto' }}>
+                  <div style={styles.weekHeaderGrid}>
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                      <div key={d} style={styles.weekDayHeader}>
+                        {d}
                       </div>
-                    </div>
-                  )
-                )}
+                    ))}
+                  </div>
+
+                  <div style={styles.calendarGrid}>
+                    {calendarCells.map((cell) =>
+                      cell.empty ? (
+                        <div key={cell.key} style={styles.emptyCalendarCell} />
+                      ) : (
+                        <div
+                          key={cell.key}
+                          style={{
+                            ...styles.calendarCell,
+                            backgroundColor: cell.items.length > 0 ? '#eff6ff' : '#ffffff',
+                            borderColor: cell.items.length > 0 ? '#93c5fd' : '#e2e8f0',
+                          }}
+                        >
+                          <span style={styles.dayNumber}>{cell.day}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                            {cell.items.map((item) => {
+                              const showObj = activeShows.find((s) => s.id === item.show_uuid);
+                              return (
+                                <div key={item.id} style={styles.calendarEventPill}>
+                                  {activeShows.length > 1 && showObj && (
+                                    <span style={{ display: 'block', fontSize: '9px', opacity: 0.85 }}>
+                                      {showObj.show_name}
+                                    </span>
+                                  )}
+                                  <strong>{item.episode_label}</strong>
+                                  {item.notes && (
+                                    <span style={{ display: 'block', fontSize: '10px', opacity: 0.9 }}>
+                                      {item.notes}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Actionable Deliverables: Missed (Previous Days) + Today + Tomorrow */}
@@ -740,7 +840,12 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                                   setActiveView('shows');
                                 }}
                                 className="secondary-button"
-                                style={{ padding: '5px 12px', fontSize: '12px', fontWeight: '700' }}
+                                style={{
+                                  padding: '7px 12px',
+                                  fontSize: '12px',
+                                  fontWeight: '700',
+                                  width: isMobile ? '100%' : 'auto',
+                                }}
                               >
                                 Go to Submit →
                               </button>
@@ -761,17 +866,31 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
       {/* OPTION 2: ACTIVE SHOWS & EPISODE SUBMISSIONS (LATEST AT TOP)          */}
       {/* ===================================================================== */}
       {activeView === 'shows' && (
-        <div style={{ marginTop: '16px' }}>
+        <div style={{ marginTop: '14px' }}>
           {/* Active Shows Switcher Cards (Latest created show always first) */}
-          <div className="panel" style={{ marginBottom: '16px' }}>
-            <div className="panel-heading" style={{ marginBottom: '12px' }}>
+          <div
+            className="panel"
+            style={{ marginBottom: '14px', padding: isMobile ? '14px' : undefined }}
+          >
+            <div className="panel-heading" style={{ marginBottom: '10px' }}>
               <div>
-                <h3>Your Active Shows ({activeShows.length})</h3>
-                <p>Most recently created show appears first. Select a Show to submit episodes.</p>
+                <h3 style={{ fontSize: isMobile ? '16px' : undefined }}>
+                  Your Active Shows ({activeShows.length})
+                </h3>
+                <p style={{ fontSize: isMobile ? '12px' : undefined }}>
+                  Select a Show to submit or update episodes.
+                </p>
               </div>
             </div>
 
-            <div style={styles.showsSwitcherGrid}>
+            <div
+              style={{
+                ...styles.showsSwitcherGrid,
+                gridTemplateColumns: isMobile
+                  ? '1fr'
+                  : 'repeat(auto-fill, minmax(260px, 1fr))',
+              }}
+            >
               {activeShows.map((s) => {
                 const isSelected = selectedShow?.id === s.id;
                 return (
@@ -789,7 +908,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                       <span style={styles.showBadge}>ID: {s.show_id}</span>
                       {isSelected && (
                         <span style={{ fontSize: '11px', fontWeight: '700', color: '#1e3a8a' }}>
-                          ● Active Workspace
+                          ● Active
                         </span>
                       )}
                     </div>
@@ -807,12 +926,21 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
 
           {/* Episode Submissions List for Selected Show (Latest Episode at Top) */}
           {selectedShow && (
-            <div className="panel">
-              <div className="panel-heading">
+            <div className="panel" style={{ padding: isMobile ? '14px' : undefined }}>
+              <div
+                className="panel-heading"
+                style={{
+                  flexDirection: isMobile ? 'column' : 'row',
+                  alignItems: isMobile ? 'stretch' : 'center',
+                  gap: '12px',
+                }}
+              >
                 <div>
-                  <h3>{selectedShow.show_name} — Episode Submissions (Latest First)</h3>
-                  <p>
-                    Newest episode slots appear right at the top so you never have to scroll down.
+                  <h3 style={{ fontSize: isMobile ? '16px' : undefined }}>
+                    {selectedShow.show_name} — Episodes (Latest First)
+                  </h3>
+                  <p style={{ fontSize: isMobile ? '12px' : undefined }}>
+                    Fill Episode Name, Drive Link &amp; Scheduled Date below.
                   </p>
                 </div>
 
@@ -820,7 +948,11 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                   type="button"
                   onClick={handleAddMoreEpisode}
                   className="primary-button"
-                  style={{ fontSize: '13px' }}
+                  style={{
+                    fontSize: '13px',
+                    width: isMobile ? '100%' : 'auto',
+                    height: isMobile ? '42px' : undefined,
+                  }}
                 >
                   + Add Next Episode (Ep{' '}
                   {episodes.length > 0
@@ -844,6 +976,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                         key={ep.id}
                         style={{
                           ...styles.epCard,
+                          padding: isMobile ? '14px' : '16px',
                           border: isApproved
                             ? '1.5px solid #86efac'
                             : isChanges
@@ -857,17 +990,26 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                         }}
                       >
                         <div style={styles.epTopRow}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <span style={styles.epNumberBadge}>Ep {ep.episode_number}</span>
                             {isApproved && (
-                              <span style={styles.approvedCheckPill}>✓ Approved by QCstar</span>
+                              <span style={styles.approvedCheckPill}>✓ Approved</span>
                             )}
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                              flexWrap: 'wrap',
+                              width: isMobile ? '100%' : 'auto',
+                              justifyContent: isMobile ? 'space-between' : 'flex-end',
+                            }}
+                          >
                             {ep.reviewed_by && (
                               <span style={{ fontSize: '12px', color: '#64748b' }}>
-                                Reviewed by <strong>{ep.reviewed_by}</strong>
+                                By <strong>{ep.reviewed_by}</strong>
                               </span>
                             )}
 
@@ -882,8 +1024,8 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                                 }
                               >
                                 {isChanges || feedbackCount > 0
-                                  ? `View QC Details & Player (${feedbackCount})`
-                                  : 'Preview with Overlay'}
+                                  ? `QC Feedback (${feedbackCount})`
+                                  : 'Preview Overlay'}
                               </button>
                             )}
 
@@ -902,30 +1044,39 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                           </div>
                         </div>
 
-                        <div style={styles.fieldsGrid}>
-                          <div>
+                        {/* Responsive Fields Grid: 1 full-width column on Mobile, 4 columns on Desktop */}
+                        <div
+                          style={{
+                            ...styles.fieldsGrid,
+                            gridTemplateColumns: isMobile
+                              ? '1fr'
+                              : '1.3fr 1.8fr 1fr 165px',
+                            gap: isMobile ? '12px' : '12px',
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
                             <label style={styles.label}>Episode Name</label>
                             <input
                               type="text"
                               placeholder={`e.g. Episode ${ep.episode_number} - Title`}
                               value={ep.ep_name || ''}
                               onChange={(e) => handleFieldChange(ep.id, 'ep_name', e.target.value)}
-                              style={styles.input}
+                              style={responsiveInputStyle}
                             />
                           </div>
 
-                          <div>
+                          <div style={{ minWidth: 0 }}>
                             <label style={styles.label}>Google Drive Video Link</label>
                             <input
                               type="url"
                               placeholder="https://drive.google.com/file/d/..."
                               value={ep.drive_url || ''}
                               onChange={(e) => handleFieldChange(ep.id, 'drive_url', e.target.value)}
-                              style={styles.input}
+                              style={responsiveInputStyle}
                             />
                           </div>
 
-                          <div>
+                          <div style={{ minWidth: 0 }}>
                             <label style={styles.label}>Scheduled Date</label>
                             <input
                               type="date"
@@ -933,17 +1084,28 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                               onChange={(e) =>
                                 handleFieldChange(ep.id, 'scheduled_date', e.target.value)
                               }
-                              style={styles.input}
+                              style={responsiveInputStyle}
                             />
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'flex-end',
+                              marginTop: isMobile ? '4px' : 0,
+                            }}
+                          >
                             <button
                               type="button"
                               disabled={savingEp === ep.id}
                               onClick={() => handleSaveEpisode(ep)}
                               className="primary-button"
-                              style={{ width: '100%', height: '40px' }}
+                              style={{
+                                width: '100%',
+                                height: isMobile ? '44px' : '40px',
+                                fontSize: isMobile ? '15px' : '14px',
+                                fontWeight: '700',
+                              }}
                             >
                               {savingEp === ep.id
                                 ? 'Submitting...'
@@ -967,8 +1129,8 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
       {/* OPTION 3: STANDALONE QC REFERENCE PLAYER (NO FEEDBACK SECTION)        */}
       {/* ===================================================================== */}
       {activeView === 'player' && (
-        <div style={{ maxWidth: '880px', margin: '16px auto 0' }}>
-          <div className="panel video-panel">
+        <div style={{ maxWidth: '880px', margin: '14px auto 0' }}>
+          <div className="panel video-panel" style={{ padding: isMobile ? '14px' : undefined }}>
             <div className="panel-heading">
               <div>
                 <h3>QC Reference Video Player</h3>
@@ -977,7 +1139,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                 </p>
               </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={() => setPlayerOverlayVisible((v) => !v)}
@@ -1242,8 +1404,8 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
         };
 
         return (
-          <div style={{ marginTop: '16px' }}>
-            <div className="panel">
+          <div style={{ marginTop: '14px' }}>
+            <div className="panel" style={{ padding: isMobile ? '14px' : undefined }}>
               <div className="panel-heading">
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
@@ -1284,7 +1446,15 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                   </p>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    flexWrap: 'wrap',
+                    width: isMobile ? '100%' : 'auto',
+                  }}
+                >
                   <button
                     type="button"
                     onClick={() => shiftReportMonth(-1)}
@@ -1298,7 +1468,11 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                     type="month"
                     value={reportMonth}
                     onChange={(e) => setReportMonth(e.target.value)}
-                    style={{ ...styles.input, width: '165px', fontWeight: '600' }}
+                    style={{
+                      ...responsiveInputStyle,
+                      width: isMobile ? '155px' : '165px',
+                      fontWeight: '600',
+                    }}
                   />
 
                   <button
@@ -1313,7 +1487,11 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                   <select
                     value={reportShowFilter}
                     onChange={(e) => setReportShowFilter(e.target.value)}
-                    style={{ ...styles.input, width: 'auto', minWidth: '185px' }}
+                    style={{
+                      ...responsiveInputStyle,
+                      width: isMobile ? '100%' : 'auto',
+                      minWidth: '185px',
+                    }}
                   >
                     <option value="all">All Active Shows ({activeShows.length})</option>
                     {activeShows.map((s) => (
@@ -1327,7 +1505,11 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                     type="button"
                     onClick={handleExportReportCsv}
                     className="primary-button"
-                    style={{ height: '40px', fontSize: '13px' }}
+                    style={{
+                      height: isMobile ? '42px' : '40px',
+                      fontSize: '13px',
+                      width: isMobile ? '100%' : 'auto',
+                    }}
                   >
                     ⬇ Export CSV
                   </button>
@@ -1443,7 +1625,12 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                                 setActiveView('shows');
                               }}
                               className="secondary-button"
-                              style={{ padding: '5px 12px', fontSize: '12px', fontWeight: '700' }}
+                              style={{
+                                padding: '6px 12px',
+                                fontSize: '12px',
+                                fontWeight: '700',
+                                width: isMobile ? '100%' : 'auto',
+                              }}
                             >
                               Open Show →
                             </button>
@@ -1607,11 +1794,24 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
       {/* QC DETAILS MODAL WITH INTEGRATED PLAYER + CLICKABLE TIMESTAMPS        */}
       {/* ===================================================================== */}
       {selectedDetailEp && (
-        <div style={modalStyles.overlay} onClick={() => setSelectedDetailEp(null)}>
-          <div style={modalStyles.wideCard} onClick={(e) => e.stopPropagation()}>
+        <div
+          style={{
+            ...modalStyles.overlay,
+            padding: isMobile ? '10px' : '20px',
+          }}
+          onClick={() => setSelectedDetailEp(null)}
+        >
+          <div
+            style={{
+              ...modalStyles.wideCard,
+              padding: isMobile ? '14px' : '24px',
+              maxHeight: isMobile ? '94vh' : '90vh',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <div style={modalStyles.header}>
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
                   <span style={styles.epNumberBadge}>Ep {selectedDetailEp.episode_number}</span>
                   <span
                     className={`review-status ${selectedDetailEp.status
@@ -1623,16 +1823,16 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                       : selectedDetailEp.status}
                   </span>
                 </div>
-                <h3 style={{ margin: '4px 0 0', fontSize: '18px', color: '#0f172a' }}>
+                <h3 style={{ margin: '4px 0 0', fontSize: isMobile ? '16px' : '18px', color: '#0f172a' }}>
                   {selectedDetailEp.ep_name || `Episode ${selectedDetailEp.episode_number}`}
                 </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
                   Scheduled: <strong>{selectedDetailEp.scheduled_date || 'Not set'}</strong> · Reviewed by:{' '}
                   <strong>{selectedDetailEp.reviewed_by || 'QCstar'}</strong>
                 </p>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   onClick={() => setModalOverlayVisible((v) => !v)}
@@ -1651,9 +1851,20 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
               </div>
             </div>
 
-            <div style={modalStyles.splitBody}>
+            <div
+              style={{
+                ...modalStyles.splitBody,
+                gridTemplateColumns: isMobile
+                  ? '1fr'
+                  : 'repeat(auto-fit, minmax(340px, 1fr))',
+              }}
+            >
               <div>
-                <div ref={modalStageRef} className="video-stage" style={{ minHeight: '340px' }}>
+                <div
+                  ref={modalStageRef}
+                  className="video-stage"
+                  style={{ minHeight: isMobile ? '240px' : '340px' }}
+                >
                   {selectedDetailEp.drive_file_id ? (
                     <>
                       <video
@@ -1735,7 +1946,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                         QCstar Feedback ({(selectedDetailEp.feedback || []).length})
                       </strong>
                       <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        Click any timestamp badge to jump the video to that exact second
+                        Tap any timestamp to jump the video to that exact second
                       </span>
                     </div>
                     {(selectedDetailEp.feedback || []).length > 0 && (
@@ -1796,20 +2007,31 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                   <label style={{ ...styles.label, color: '#0f172a' }}>
                     Submit Revised Google Drive Link (after fixing changes)
                   </label>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: isMobile ? 'column' : 'row',
+                      gap: '8px',
+                      marginTop: '6px',
+                    }}
+                  >
                     <input
                       type="url"
                       placeholder="https://drive.google.com/file/d/..."
                       value={modalDriveUrl}
                       onChange={(e) => setModalDriveUrl(e.target.value)}
-                      style={{ ...styles.input, flex: 1 }}
+                      style={{ ...responsiveInputStyle, flex: 1 }}
                     />
                     <button
                       type="button"
                       disabled={savingEp === selectedDetailEp.id}
                       onClick={() => handleSaveEpisode(selectedDetailEp, modalDriveUrl)}
                       className="primary-button"
-                      style={{ whiteSpace: 'nowrap' }}
+                      style={{
+                        whiteSpace: 'nowrap',
+                        height: isMobile ? '44px' : '40px',
+                        width: isMobile ? '100%' : 'auto',
+                      }}
                     >
                       {savingEp === selectedDetailEp.id ? 'Submitting...' : 'Submit Revised Cut'}
                     </button>
@@ -1901,6 +2123,7 @@ const styles = {
     fontSize: '13px',
     fontWeight: '600',
     cursor: 'pointer',
+    textAlign: 'center',
   },
   navPillActive: {
     padding: '8px 14px',
@@ -1911,6 +2134,7 @@ const styles = {
     fontSize: '13px',
     fontWeight: '700',
     cursor: 'pointer',
+    textAlign: 'center',
   },
   showsSwitcherGrid: {
     display: 'grid',
@@ -2039,7 +2263,7 @@ const styles = {
     backgroundColor: '#dc2626',
     color: '#ffffff',
     border: 'none',
-    padding: '5px 12px',
+    padding: '6px 12px',
     borderRadius: '6px',
     fontSize: '12px',
     fontWeight: '700',
@@ -2049,7 +2273,7 @@ const styles = {
     backgroundColor: '#1e3a8a',
     color: '#ffffff',
     border: 'none',
-    padding: '5px 12px',
+    padding: '6px 12px',
     borderRadius: '6px',
     fontSize: '12px',
     fontWeight: '700',
@@ -2062,10 +2286,10 @@ const styles = {
   },
   label: {
     display: 'block',
-    fontSize: '12px',
+    fontSize: '13px',
     fontWeight: '600',
-    color: '#475569',
-    marginBottom: '4px',
+    color: '#334155',
+    marginBottom: '5px',
   },
   input: {
     width: '100%',
@@ -2247,6 +2471,7 @@ const modalStyles = {
     gap: '12px',
     paddingBottom: '14px',
     borderBottom: '1px solid #e2e8f0',
+    flexWrap: 'wrap',
   },
   splitBody: {
     display: 'grid',
