@@ -1275,9 +1275,13 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                     allow="autoplay; fullscreen"
                     allowFullScreen
                     style={{
-                      width: "100%",
+                      position: "absolute",
+                      top: 0,
+                      left: "50%",
+                      transform: "translateX(-50%)",
                       height: "55vh",
-                      aspectRatio: "9 / 16",
+                      width: "calc(55vh * 16 / 9)",
+                      maxWidth: "none",
                       border: 0,
                       display: "block",
                       background: "#000",

@@ -743,7 +743,8 @@
 }
 
 
-/* Exact centered 9:16 video & adaptive iframe directly beneath .overlay-frame-layer */
+
+/* Exact centered 9:16 alignment for BOTH offline <video> and online Google Drive <iframe> */
 .video-stage {
   display: flex !important;
   justify-content: center !important;
@@ -767,13 +768,29 @@
   overflow: hidden !important;
 }
 
-.video-frame-wrapper > video.review-video,
-.video-frame-wrapper > iframe.adaptive-drive-frame {
+/* Offline / raw <video> fills the 9:16 wrapper 100% */
+.video-frame-wrapper > video.review-video {
   position: absolute !important;
   inset: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  object-fit: fill !important;
+  object-fit: contain !important;
+  display: block !important;
+  border: 0 !important;
+  margin: 0 !important;
+}
+
+/* Online Google Drive /preview iframe renders a 16:9 stage with the 9:16 video dead-center inside it:
+   giving the iframe 16:9 width (height * 16 / 9) centered at left: 50% places Drive's internal 9:16 video
+   at the EXACT same coordinates as the 9:16 .overlay-frame-layer! */
+.video-frame-wrapper > iframe.adaptive-drive-frame {
+  position: absolute !important;
+  top: 0 !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  height: 100% !important;
+  width: calc(68vh * 16 / 9) !important;
+  max-width: none !important;
   display: block !important;
   border: 0 !important;
   margin: 0 !important;
@@ -784,5 +801,8 @@
     height: 36vh !important;
     max-height: 36vh !important;
     width: calc(36vh * 9 / 16) !important;
+  }
+  .studio-mobile-active .video-frame-wrapper > iframe.adaptive-drive-frame {
+    width: calc(36vh * 16 / 9) !important;
   }
 }
