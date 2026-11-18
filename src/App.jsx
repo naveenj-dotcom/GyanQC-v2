@@ -844,13 +844,37 @@ export default function App() {
           {/* LEFT / TOP COLUMN: VIDEO PLAYER WITH COMPACT EPISODE # SEARCH */}
           <section className="video-column">
             <div className="panel video-panel">
-              <div className="panel-heading" style={{ marginBottom: isMobile ? "8px" : "12px" }}>
-                <div>
-                  <h3 style={{ fontSize: isMobile ? "15px" : undefined }}>
+              <div
+                className="panel-heading"
+                style={{
+                  marginBottom: isMobile ? "8px" : "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "10px",
+                  flexWrap: isMobile ? "wrap" : "nowrap",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3
+                    title={videoName || "Video Review"}
+                    style={{
+                      fontSize: isMobile ? "15px" : undefined,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
                     {videoName || "Video Review"}
                   </h3>
                   {!isMobile && (
-                    <p>
+                    <p
+                      style={{
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {activeEpisode && selectedShow
                         ? `Show: ${selectedShow.show_name}`
                         : "Upload any local video or paste a Google Drive link for quick QC."}
@@ -858,7 +882,15 @@ export default function App() {
                   )}
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    flexShrink: 0,
+                    marginLeft: "auto",
+                  }}
+                >
                   {/* Compact Jump-to-Episode # Search (handles 200+ episodes) */}
                   {selectedShow && showEpisodes.length > 0 && (
                     <form
@@ -966,6 +998,12 @@ export default function App() {
                     className={`review-status ${status
                       .toLowerCase()
                       .replace(" ", "-")}`}
+                    style={{
+                      minWidth: "136px",
+                      textAlign: "center",
+                      display: "inline-block",
+                      flexShrink: 0,
+                    }}
                   >
                     {status}
                   </span>
@@ -982,7 +1020,7 @@ export default function App() {
 
               <div ref={stageRef} className="video-stage">
                 {videoUrl ? (
-                  <div className="video-frame-wrapper">
+                  <div className="video-frame-wrapper" style={{ aspectRatio: "9 / 16", height: "100%", maxHeight: "100%" }}>
                     <video
                       ref={videoRef}
                       className="review-video"
