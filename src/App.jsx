@@ -178,6 +178,7 @@ export default function App() {
   const [driveError, setDriveError] = useState("");
   const [isBuffering, setIsBuffering] = useState(false);
   const [streamMode, setStreamMode] = useState("proxy");
+  const [videoQuality, setVideoQuality] = useState("fast");
   const [adaptiveSeekSec, setAdaptiveSeekSec] = useState(0);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -459,9 +460,9 @@ export default function App() {
       videoRef.current.load();
     }
     setAdaptiveSeekSec(0);
-    setVideoUrl(getStreamUrl(ep.drive_file_id));
+    const baseStream = getStreamUrl(ep.drive_file_id);
+    setVideoUrl(videoQuality === "fast" && !baseStream.startsWith("blob:") ? `${baseStream}&quality=fast` : baseStream);
     if (isVideoCached(ep.drive_file_id)) setIsBuffering(false);
-      warmDriveVideoToBlob(ep.drive_file_id, { swapIfActive: true });
     }
     setVideoName(`Ep ${ep.episode_number}: ${ep.ep_name || "Untitled"}`);
     setCurrentTime(0);
@@ -1067,6 +1068,30 @@ export default function App() {
                     </form>
                   )}
 
+                  {activeEpisode?.drive_file_id && (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      title="Switch between Fast 720p stream and Original master file"
+                      onClick={() => {
+                        const nextQ = videoQuality === "fast" ? "original" : "fast";
+                        setVideoQuality(nextQ);
+                        const savedTime = videoRef.current?.currentTime || 0;
+                        const base = getStreamUrl(activeEpisode.drive_file_id);
+                        setIsBuffering(true);
+                        setVideoUrl(nextQ === "fast" && !base.startsWith("blob:") ? `${base}&quality=fast` : base);
+                        requestAnimationFrame(() => {
+                          if (videoRef.current) {
+                            videoRef.current.currentTime = savedTime;
+                            videoRef.current.play().catch(() => {});
+                          }
+                        });
+                      }}
+                      style={{ padding: "4px 9px", fontSize: "11px", fontWeight: "700" }}
+                    >
+                      {videoQuality === "fast" ? "⚡ Fast" : "🎬 Original"}
+                    </button>
+                  )}
                   <button
                     className="secondary-button"
                     type="button"
@@ -1150,6 +1175,10 @@ export default function App() {
                           }
                         }}
                         onError={() => {
+                          if (videoUrl.includes("&quality=fast")) {
+                            setVideoUrl(videoUrl.replace("&quality=fast", ""));
+                            return;
+                          }
                           setIsBuffering(false);
                           if (videoUrl.startsWith(VIDEO_PROXY_URL)) {
                             setDriveError(
