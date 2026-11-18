@@ -222,7 +222,7 @@ export default function QcstarPortal({
       .neq('status', 'Not Submitted');
 
     if (!error && data) {
-      const allSorted = sortLatestFirst(data);
+      const allSorted = [...data].sort((a, b) => (b.episode_number || 0) - (a.episode_number || 0));
       const pendingOnly = allSorted.filter((ep) => ep.status !== 'Approved');
       setPendingVideos(allSorted);
       setApprovedShowVideos(allSorted.filter((ep) => ep.status === 'Approved'));
