@@ -29,6 +29,17 @@ function getSavedSessionUser() {
   }
 }
 
+function applyDocumentIcons(logoUrl) {
+  const iconHref = logoUrl || "/favicon.svg";
+  const appleHref = logoUrl || "/icon-192.png";
+
+  const iconEl = document.querySelector("link[rel='icon']");
+  if (iconEl) iconEl.href = iconHref;
+
+  const appleEl = document.querySelector("link[rel='apple-touch-icon']");
+  if (appleEl) appleEl.href = appleHref;
+}
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getSavedSessionUser());
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -127,7 +138,11 @@ export default function App() {
       const overlayRow = data.find((r) => r.key === "video_overlay_url");
       const logoRow = data.find((r) => r.key === "app_logo_url");
       if (overlayRow?.value) setActiveOverlayUrl(overlayRow.value);
-      if (logoRow) setAppLogoUrl(logoRow.value || "");
+      if (logoRow) {
+        const nextLogo = logoRow.value || "";
+        setAppLogoUrl(nextLogo);
+        applyDocumentIcons(nextLogo);
+      }
     }
   }, []);
 
@@ -641,7 +656,10 @@ export default function App() {
           currentOverlayUrl={activeOverlayUrl}
           currentLogoUrl={appLogoUrl}
           onSavedOverlay={(newUrl) => setActiveOverlayUrl(newUrl)}
-          onSavedLogo={(newLogo) => setAppLogoUrl(newLogo)}
+          onSavedLogo={(newLogo) => {
+            setAppLogoUrl(newLogo);
+            applyDocumentIcons(newLogo);
+          }}
           onClose={() => setShowOverlayModal(false)}
         />
       )}
