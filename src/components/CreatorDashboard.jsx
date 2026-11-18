@@ -57,7 +57,10 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
   const [selectedShow, setSelectedShow] = useState(show || null);
   const [loadingShows, setLoadingShows] = useState(true);
 
-  const [activeTab, setActiveTab] = useState('calendar');
+  // 4 bottom tabs: 'home' | 'shows' | 'calendar' | 'reports'
+  const [activeTab, setActiveTab] = useState('home');
+  // Inside 'shows' tab: 'list' (all shows latest first) or 'detail' (selected show episodes descending)
+  const [showsViewMode, setShowsViewMode] = useState('list');
 
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -98,7 +101,13 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
     const { data, error } = await query;
     if (!error && Array.isArray(data)) {
-      const visibleShows = data.filter((s) => s.status !== 'ended');
+      const visibleShows = data
+        .filter((s) => s.status !== 'ended')
+        .sort(
+          (a, b) =>
+            new Date(b.created_at || 0).getTime() -
+            new Date(a.created_at || 0).getTime()
+        );
       setShowsList(visibleShows);
       setSelectedShow((prev) => {
         if (prev && visibleShows.some((s) => s.id === prev.id)) return prev;
@@ -126,11 +135,14 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
         .from('qc_episodes')
         .select('*')
         .eq('show_uuid', showUuid)
-        .order('episode_number', { ascending: true }),
+        .order('episode_number', { ascending: false }),
     ]);
 
     setCalendarEntries(calData || []);
-    setEpisodes(epData || []);
+    const sortedEps = (epData || [])
+      .slice()
+      .sort((a, b) => Number(b.episode_number || 0) - Number(a.episode_number || 0));
+    setEpisodes(sortedEps);
     setLoadingData(false);
   };
 
@@ -187,7 +199,8 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
     if (targetShow) {
       setSelectedShow(targetShow);
     }
-    setActiveTab('episodes');
+    setActiveTab('shows');
+    setShowsViewMode('detail');
 
     const { data: epRow } = await supabase
       .from('qc_episodes')
@@ -299,6 +312,31 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
     );
   }
 
+  // Latest shows first
+  const sortedShows = showsList
+    .slice()
+    .sort(
+      (a, b) =>
+        new Date(b.created_at || 0).getTime() -
+        new Date(a.created_at || 0).getTime()
+    );
+
+  // Episodes in strict descending order (Ep 5, Ep 4, Ep 3, Ep 2, Ep 1...)
+  const submittedEpisodes = episodes
+    .filter((ep) => ep.status !== 'Not Submitted' || Boolean(ep.drive_file_id))
+    .slice()
+    .sort((a, b) => Number(b.episode_number || 0) - Number(a.episode_number || 0));
+
+  const changesRequestedEps = submittedEpisodes.filter(
+    (ep) => ep.status === 'Changes Requested'
+  );
+  const approvedEps = submittedEpisodes.filter(
+    (ep) => ep.status === 'Approved'
+  );
+  const pendingEps = submittedEpisodes.filter(
+    (ep) => ep.status !== 'Approved' && ep.status !== 'Changes Requested'
+  );
+
   const [yearStr, monthStr] = selectedMonth.split('-');
   const yearNum = Number(yearStr);
   const monthNum = Number(monthStr);
@@ -323,19 +361,14 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
     calendarCells.push({ empty: false, day, dateIso, items: itemsForDay, key: dateIso });
   }
 
-  const submittedEpisodes = episodes.filter(
-    (ep) => ep.status !== 'Not Submitted' || Boolean(ep.drive_file_id)
-  );
-  const changesRequestedCount = submittedEpisodes.filter(
-    (ep) => ep.status === 'Changes Requested'
-  ).length;
-  const approvedCount = submittedEpisodes.filter(
-    (ep) => ep.status === 'Approved'
-  ).length;
+  const approvalRate =
+    submittedEpisodes.length > 0
+      ? Math.round((approvedEps.length / submittedEpisodes.length) * 100)
+      : 0;
 
   return (
-    <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px' }}>
-      {/* TOP SHOW HEADER & CREATOR ID BAR */}
+    <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px 20px 104px' }}>
+      {/* TOP CREATOR HEADER BAR */}
       <div className="panel" style={{ marginBottom: '18px' }}>
         <div
           style={{
@@ -348,94 +381,483 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
         >
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              <span style={styles.creatorBadge}>
-                Creator ID: {creatorId}
-              </span>
+              <span style={styles.creatorBadge}>Creator ID: {creatorId}</span>
               <span style={styles.showCountBadge}>
-                {showsList.length} Assigned {showsList.length === 1 ? 'Show' : 'Shows'}
+                {sortedShows.length} Assigned {sortedShows.length === 1 ? 'Show' : 'Shows'}
               </span>
             </div>
-            <h2 style={{ margin: '8px 0 4px', fontSize: '22px', color: '#0f172a' }}>
+            <h2 style={{ margin: '8px 0 2px', fontSize: '21px', color: '#0f172a' }}>
               {selectedShow?.show_name}
             </h2>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-              View your scheduled episodes on the calendar, upload Google Drive links, and review QCstar feedback.
+              {activeTab === 'home' && 'Creator workspace overview, pending re-edits, and quick actions.'}
+              {activeTab === 'shows' && 'Browse your assigned shows (latest first) and manage episodes in descending order.'}
+              {activeTab === 'calendar' && 'View scheduled episode release dates and upload Google Drive links.'}
+              {activeTab === 'reports' && 'Track QC approval rates, re-edit status, and QCstar timestamp notes.'}
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <CreatorNotificationBell
-              showsList={showsList}
+              showsList={sortedShows}
               onOpenEpisode={handleOpenNotificationEpisode}
             />
 
-            {showsList.length > 1 && (
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    color: '#64748b',
-                    marginBottom: '4px',
-                  }}
-                >
-                  SWITCH SHOW
-                </label>
-                <select
-                  value={selectedShow?.id || ''}
-                  onChange={(e) => {
-                    const nextShow = showsList.find((s) => s.id === e.target.value);
-                    if (nextShow) setSelectedShow(nextShow);
-                  }}
-                  style={styles.showSelect}
-                >
-                  {showsList.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.show_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {sortedShows.length > 1 && (
+              <select
+                aria-label="Active Show"
+                value={selectedShow?.id || ''}
+                onChange={(e) => {
+                  const nextShow = sortedShows.find((s) => s.id === e.target.value);
+                  if (nextShow) setSelectedShow(nextShow);
+                }}
+                style={styles.showSelect}
+              >
+                {sortedShows.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.show_name}
+                  </option>
+                ))}
+              </select>
             )}
 
             <button
               type="button"
               onClick={() => openModalForEpisode()}
               className="primary-button"
-              style={{ alignSelf: 'flex-end' }}
             >
-              + Upload / Submit Episode Link
+              + Submit Episode Link
             </button>
           </div>
         </div>
-
-        {/* 2-TAB NAVIGATION: CALENDAR vs EPISODES & QC STATUS */}
-        <div style={styles.tabBar}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('calendar')}
-            style={activeTab === 'calendar' ? styles.tabActive : styles.tabInactive}
-          >
-            📅 Show Calendar ({monthItems.length} in {monthLabel.split(' ')[0]})
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('episodes')}
-            style={activeTab === 'episodes' ? styles.tabActive : styles.tabInactive}
-          >
-            🎬 Episodes &amp; QC Status ({submittedEpisodes.length})
-            {changesRequestedCount > 0 && (
-              <span style={styles.changesAlertPill}>
-                {changesRequestedCount} Needs Re-edit
-              </span>
-            )}
-          </button>
-        </div>
       </div>
 
-      {/* TAB 1: FULL MONTHLY CALENDAR FOR SELECTED SHOW */}
+      {/* =========================================================
+          BOTTOM TAB 1: HOME
+         ========================================================= */}
+      {activeTab === 'home' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          {/* KPI SUMMARY CARDS */}
+          <div style={styles.kpiGrid}>
+            <div
+              style={{ ...styles.kpiCard, cursor: 'pointer' }}
+              onClick={() => {
+                setActiveTab('shows');
+                setShowsViewMode('list');
+              }}
+            >
+              <span style={styles.kpiLabel}>ASSIGNED SHOWS</span>
+              <strong style={styles.kpiValue}>{sortedShows.length}</strong>
+              <span style={styles.kpiSub}>Latest: {sortedShows[0]?.show_name}</span>
+            </div>
+
+            <div
+              style={{ ...styles.kpiCard, cursor: 'pointer' }}
+              onClick={() => {
+                setActiveTab('shows');
+                setShowsViewMode('detail');
+              }}
+            >
+              <span style={styles.kpiLabel}>SUBMITTED EPISODES</span>
+              <strong style={styles.kpiValue}>{submittedEpisodes.length}</strong>
+              <span style={styles.kpiSub}>{selectedShow?.show_name}</span>
+            </div>
+
+            <div
+              style={{
+                ...styles.kpiCard,
+                borderColor: changesRequestedEps.length > 0 ? '#fca5a5' : '#e2e8f0',
+                backgroundColor: changesRequestedEps.length > 0 ? '#fef2f2' : '#ffffff',
+                cursor: 'pointer',
+              }}
+              onClick={() => {
+                setActiveTab('shows');
+                setShowsViewMode('detail');
+              }}
+            >
+              <span style={{ ...styles.kpiLabel, color: '#b91c1c' }}>NEEDS RE-EDIT</span>
+              <strong style={{ ...styles.kpiValue, color: '#b91c1c' }}>
+                {changesRequestedEps.length}
+              </strong>
+              <span style={styles.kpiSub}>Changes requested by QCstar</span>
+            </div>
+
+            <div
+              style={{ ...styles.kpiCard, cursor: 'pointer' }}
+              onClick={() => setActiveTab('reports')}
+            >
+              <span style={{ ...styles.kpiLabel, color: '#166534' }}>APPROVED</span>
+              <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
+                {approvedEps.length}
+              </strong>
+              <span style={styles.kpiSub}>{approvalRate}% QC pass rate</span>
+            </div>
+          </div>
+
+          {/* LATEST SHOWS QUICK JUMP */}
+          <div className="panel">
+            <div className="panel-heading">
+              <div>
+                <h3>Latest Assigned Shows</h3>
+                <p>Newest shows appear first. Click a show to view its episodes (latest episode on top).</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('shows');
+                  setShowsViewMode('list');
+                }}
+                className="secondary-button"
+                style={{ fontSize: '13px' }}
+              >
+                View All Shows →
+              </button>
+            </div>
+
+            <div style={styles.showsGrid}>
+              {sortedShows.slice(0, 4).map((s, idx) => (
+                <div
+                  key={s.id}
+                  onClick={() => {
+                    setSelectedShow(s);
+                    setActiveTab('shows');
+                    setShowsViewMode('detail');
+                  }}
+                  style={{
+                    ...styles.showCard,
+                    borderColor: selectedShow?.id === s.id ? '#1e3a8a' : '#e2e8f0',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <strong style={{ fontSize: '16px', color: '#0f172a' }}>{s.show_name}</strong>
+                    {idx === 0 && <span style={styles.latestBadge}>LATEST</span>}
+                  </div>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>
+                    Show ID: <strong>{s.show_id || s.creator_id || '—'}</strong>
+                  </span>
+                  <span style={{ fontSize: '12px', color: '#1e3a8a', fontWeight: '700', marginTop: '4px' }}>
+                    Open Episodes →
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* LATEST EPISODES ACTIVITY (DESCENDING) */}
+          <div className="panel">
+            <div className="panel-heading">
+              <div>
+                <h3>Recent Episodes — {selectedShow?.show_name}</h3>
+                <p>Sorted from highest/latest episode number down.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => openModalForEpisode()}
+                className="primary-button"
+                style={{ fontSize: '13px' }}
+              >
+                + Upload Episode
+              </button>
+            </div>
+
+            {loadingData ? (
+              <p style={{ color: '#64748b' }}>Loading episodes...</p>
+            ) : submittedEpisodes.length === 0 ? (
+              <div style={styles.emptyBox}>
+                <strong>No episodes uploaded yet for {selectedShow?.show_name}.</strong>
+                <span>Click <strong>+ Upload Episode</strong> to submit your first episode link.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {submittedEpisodes.slice(0, 5).map((ep) => {
+                  const badge = getCreatorStatusBadge(ep);
+                  return (
+                    <div key={ep.id} style={styles.episodeRow}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={styles.epPill}>Ep {ep.episode_number}</span>
+                        <strong style={{ fontSize: '14px', color: '#0f172a' }}>
+                          {ep.ep_name || `Episode ${ep.episode_number}`}
+                        </strong>
+                        <span
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: '999px',
+                            fontSize: '11px',
+                            fontWeight: '700',
+                            backgroundColor: badge.bg,
+                            color: badge.color,
+                            border: badge.border,
+                          }}
+                        >
+                          {badge.label}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {ep.drive_file_id && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewError('');
+                              setPreviewEp(ep);
+                            }}
+                            className="secondary-button"
+                            style={{ fontSize: '12px' }}
+                          >
+                            ▶ Preview
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openModalForEpisode({
+                              epNumber: ep.episode_number,
+                              epName: ep.ep_name,
+                              driveUrl: ep.drive_url,
+                              scheduledDate: ep.scheduled_date,
+                            })
+                          }
+                          className="secondary-button"
+                          style={{ fontSize: '12px' }}
+                        >
+                          Edit Link
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          BOTTOM TAB 2: SHOWS (LATEST SHOWS FIRST -> EPISODES DESCENDING)
+         ========================================================= */}
+      {activeTab === 'shows' && (
+        <>
+          {showsViewMode === 'list' ? (
+            <div className="panel">
+              <div className="panel-heading">
+                <div>
+                  <h3>Your Shows ({sortedShows.length})</h3>
+                  <p>Latest shows appear at the top. Select any show to view its episodes in descending order.</p>
+                </div>
+              </div>
+
+              <div style={styles.showsGrid}>
+                {sortedShows.map((s, idx) => {
+                  const isSelected = selectedShow?.id === s.id;
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => {
+                        setSelectedShow(s);
+                        setShowsViewMode('detail');
+                      }}
+                      style={{
+                        ...styles.showCard,
+                        borderColor: isSelected ? '#1e3a8a' : '#cbd5e1',
+                        backgroundColor: isSelected ? '#f8fafc' : '#ffffff',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <strong style={{ fontSize: '17px', color: '#0f172a' }}>{s.show_name}</strong>
+                        {idx === 0 && <span style={styles.latestBadge}>LATEST</span>}
+                      </div>
+
+                      <div style={{ fontSize: '12px', color: '#64748b', display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                        <span>
+                          Show ID: <strong>{s.show_id || s.creator_id || '—'}</strong>
+                        </span>
+                        {s.created_at && (
+                          <span>
+                            Added:{' '}
+                            <strong>
+                              {new Date(s.created_at).toLocaleDateString('en-IN', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </strong>
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '12px', fontWeight: '700', color: '#1e3a8a' }}>
+                          View Episodes (Latest First) →
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="panel">
+              <div className="panel-heading">
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setShowsViewMode('list')}
+                      className="secondary-button"
+                      style={{ padding: '5px 10px', fontSize: '12px' }}
+                    >
+                      ← All Shows
+                    </button>
+                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>
+                      Sorted: Latest Episode First (Ep {submittedEpisodes[0]?.episode_number || '—'} ↓)
+                    </span>
+                  </div>
+                  <h3>{selectedShow?.show_name} — Episodes</h3>
+                  <p>
+                    {approvedEps.length} Approved · {changesRequestedEps.length} Changes Requested ·{' '}
+                    {pendingEps.length} Pending QC
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openModalForEpisode()}
+                  className="primary-button"
+                >
+                  + Submit New Episode
+                </button>
+              </div>
+
+              {loadingData ? (
+                <p style={{ color: '#64748b' }}>Loading episodes...</p>
+              ) : submittedEpisodes.length === 0 ? (
+                <div style={styles.emptyBox}>
+                  <strong>No episodes submitted yet for {selectedShow?.show_name}.</strong>
+                  <span>
+                    Click <strong>+ Submit New Episode</strong> to paste your Google Drive link.
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {submittedEpisodes.map((ep) => {
+                    const badge = getCreatorStatusBadge(ep);
+                    const feedbackItems = Array.isArray(ep.feedback) ? ep.feedback : [];
+
+                    return (
+                      <div
+                        key={ep.id}
+                        style={{
+                          ...styles.episodeRow,
+                          borderColor:
+                            ep.status === 'Changes Requested'
+                              ? '#fca5a5'
+                              : ep.status === 'Approved'
+                              ? '#86efac'
+                              : '#e2e8f0',
+                          backgroundColor:
+                            ep.status === 'Changes Requested' ? '#fef2f2' : '#f8fafc',
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: '220px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={styles.epPill}>Ep {ep.episode_number}</span>
+                            <strong style={{ fontSize: '15px', color: '#0f172a' }}>
+                              {ep.ep_name || `Episode ${ep.episode_number}`}
+                            </strong>
+                            <span
+                              style={{
+                                padding: '3px 10px',
+                                borderRadius: '999px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                backgroundColor: badge.bg,
+                                color: badge.color,
+                                border: badge.border,
+                              }}
+                            >
+                              {badge.label}
+                            </span>
+                          </div>
+
+                          <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#64748b' }}>
+                            Scheduled Date: <strong>{ep.scheduled_date || 'Not set'}</strong>
+                            {ep.reviewed_by && (
+                              <>
+                                {' '}
+                                · Reviewed by: <strong>{ep.reviewed_by}</strong>
+                              </>
+                            )}
+                          </p>
+
+                          {feedbackItems.length > 0 && (
+                            <div style={styles.feedbackSummaryBox}>
+                              <strong style={{ fontSize: '12px', color: '#b91c1c' }}>
+                                QCstar Notes ({feedbackItems.length}):
+                              </strong>
+                              <ul style={{ margin: '4px 0 0', paddingLeft: '18px', fontSize: '12px', color: '#1e293b' }}>
+                                {feedbackItems
+                                  .slice()
+                                  .sort((a, b) => a.time - b.time)
+                                  .map((fb) => (
+                                    <li key={fb.id} style={{ marginBottom: '2px' }}>
+                                      <strong>[{formatTime(fb.time)}]</strong> {fb.message}
+                                    </li>
+                                  ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          {ep.drive_file_id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPreviewError('');
+                                setPreviewEp(ep);
+                              }}
+                              className="secondary-button"
+                              style={{ fontSize: '12px', fontWeight: '700' }}
+                            >
+                              ▶ Watch &amp; Check Overlay
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openModalForEpisode({
+                                epNumber: ep.episode_number,
+                                epName: ep.ep_name,
+                                driveUrl: ep.drive_url,
+                                scheduledDate: ep.scheduled_date,
+                              })
+                            }
+                            className={
+                              ep.status === 'Changes Requested'
+                                ? 'primary-button'
+                                : 'secondary-button'
+                            }
+                            style={{ fontSize: '12px', fontWeight: '700' }}
+                          >
+                            {ep.status === 'Changes Requested'
+                              ? '↻ Re-upload Fixed Link'
+                              : 'Edit Link'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* =========================================================
+          BOTTOM TAB 3: CALENDAR
+         ========================================================= */}
       {activeTab === 'calendar' && (
         <div className="panel">
           <div className="panel-heading">
@@ -601,108 +1023,115 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
         </div>
       )}
 
-      {/* TAB 2: EPISODES LIST & QC STATUS / FEEDBACK */}
-      {activeTab === 'episodes' && (
-        <div className="panel">
-          <div className="panel-heading">
-            <div>
-              <h3>Submitted Episodes — {selectedShow?.show_name}</h3>
-              <p>
-                {approvedCount} Approved · {changesRequestedCount} Changes Requested ·{' '}
-                {submittedEpisodes.length - approvedCount - changesRequestedCount} Pending QC
-              </p>
+      {/* =========================================================
+          BOTTOM TAB 4: REPORTS
+         ========================================================= */}
+      {activeTab === 'reports' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+          <div className="panel">
+            <div className="panel-heading">
+              <div>
+                <h3>QC Performance Report — {selectedShow?.show_name}</h3>
+                <p>Summary of episode approvals, pending reviews, and re-edit requests.</p>
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => openModalForEpisode()}
-              className="primary-button"
-            >
-              + Submit New Episode
-            </button>
+            <div style={styles.kpiGrid}>
+              <div style={styles.kpiCard}>
+                <span style={styles.kpiLabel}>TOTAL SUBMITTED</span>
+                <strong style={styles.kpiValue}>{submittedEpisodes.length}</strong>
+                <span style={styles.kpiSub}>Episodes uploaded</span>
+              </div>
+
+              <div style={styles.kpiCard}>
+                <span style={{ ...styles.kpiLabel, color: '#166534' }}>APPROVED</span>
+                <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
+                  {approvedEps.length}
+                </strong>
+                <span style={styles.kpiSub}>{approvalRate}% approval rate</span>
+              </div>
+
+              <div style={styles.kpiCard}>
+                <span style={{ ...styles.kpiLabel, color: '#b91c1c' }}>CHANGES REQUESTED</span>
+                <strong style={{ ...styles.kpiValue, color: '#b91c1c' }}>
+                  {changesRequestedEps.length}
+                </strong>
+                <span style={styles.kpiSub}>Awaiting re-upload</span>
+              </div>
+
+              <div style={styles.kpiCard}>
+                <span style={{ ...styles.kpiLabel, color: '#92400e' }}>PENDING QC</span>
+                <strong style={{ ...styles.kpiValue, color: '#b45309' }}>
+                  {pendingEps.length}
+                </strong>
+                <span style={styles.kpiSub}>In QCstar queue</span>
+              </div>
+            </div>
+
+            {/* PROGRESS BAR */}
+            <div style={{ marginTop: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
+                <span>Approval Progress</span>
+                <span>{approvalRate}% Approved</span>
+              </div>
+              <div style={styles.progressTrack}>
+                <div
+                  style={{
+                    ...styles.progressFill,
+                    width: `${approvalRate}%`,
+                  }}
+                />
+              </div>
+            </div>
           </div>
 
-          {loadingData ? (
-            <p style={{ color: '#64748b' }}>Loading episodes...</p>
-          ) : submittedEpisodes.length === 0 ? (
-            <div style={styles.emptyBox}>
-              <strong>No episodes submitted yet for {selectedShow?.show_name}.</strong>
-              <span>
-                Click <strong>+ Submit New Episode</strong> or click any episode on the Show Calendar to paste its Google Drive link.
-              </span>
+          <div className="panel">
+            <div className="panel-heading">
+              <div>
+                <h3>Episode QC Log (Latest First)</h3>
+                <p>Detailed status and timestamped QCstar notes per episode.</p>
+              </div>
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {submittedEpisodes.map((ep) => {
-                const badge = getCreatorStatusBadge(ep);
-                const feedbackItems = Array.isArray(ep.feedback) ? ep.feedback : [];
 
-                return (
-                  <div
-                    key={ep.id}
-                    style={{
-                      ...styles.episodeRow,
-                      borderColor:
-                        ep.status === 'Changes Requested'
-                          ? '#fca5a5'
-                          : ep.status === 'Approved'
-                          ? '#86efac'
-                          : '#e2e8f0',
-                      backgroundColor:
-                        ep.status === 'Changes Requested' ? '#fef2f2' : '#f8fafc',
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: '220px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span style={styles.epPill}>Ep {ep.episode_number}</span>
-                        <strong style={{ fontSize: '15px', color: '#0f172a' }}>
-                          {ep.ep_name || `Episode ${ep.episode_number}`}
-                        </strong>
-                        <span
-                          style={{
-                            padding: '3px 10px',
-                            borderRadius: '999px',
-                            fontSize: '11px',
-                            fontWeight: '700',
-                            backgroundColor: badge.bg,
-                            color: badge.color,
-                            border: badge.border,
-                          }}
-                        >
-                          {badge.label}
-                        </span>
+            {submittedEpisodes.length === 0 ? (
+              <div style={styles.emptyBox}>
+                <strong>No episode report data yet.</strong>
+                <span>Submit episodes to see QC status metrics here.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {submittedEpisodes.map((ep) => {
+                  const badge = getCreatorStatusBadge(ep);
+                  const notesCount = Array.isArray(ep.feedback) ? ep.feedback.length : 0;
+                  return (
+                    <div key={ep.id} style={styles.episodeRow}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          <span style={styles.epPill}>Ep {ep.episode_number}</span>
+                          <strong style={{ fontSize: '14px', color: '#0f172a' }}>
+                            {ep.ep_name || `Episode ${ep.episode_number}`}
+                          </strong>
+                          <span
+                            style={{
+                              padding: '3px 10px',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              backgroundColor: badge.bg,
+                              color: badge.color,
+                              border: badge.border,
+                            }}
+                          >
+                            {badge.label}
+                          </span>
+                        </div>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                          Scheduled: <strong>{ep.scheduled_date || 'Not set'}</strong> ·{' '}
+                          Reviewer: <strong>{ep.reviewed_by || 'Pending'}</strong> ·{' '}
+                          QC Notes: <strong>{notesCount}</strong>
+                        </p>
                       </div>
 
-                      <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#64748b' }}>
-                        Scheduled Date: <strong>{ep.scheduled_date || 'Not set'}</strong>
-                        {ep.reviewed_by && (
-                          <>
-                            {' '}
-                            · Reviewed by: <strong>{ep.reviewed_by}</strong>
-                          </>
-                        )}
-                      </p>
-
-                      {feedbackItems.length > 0 && (
-                        <div style={styles.feedbackSummaryBox}>
-                          <strong style={{ fontSize: '12px', color: '#b91c1c' }}>
-                            QCstar Notes ({feedbackItems.length}):
-                          </strong>
-                          <ul style={{ margin: '4px 0 0', paddingLeft: '18px', fontSize: '12px', color: '#1e293b' }}>
-                            {feedbackItems
-                              .slice()
-                              .sort((a, b) => a.time - b.time)
-                              .map((fb) => (
-                                <li key={fb.id} style={{ marginBottom: '2px' }}>
-                                  <strong>[{formatTime(fb.time)}]</strong> {fb.message}
-                                </li>
-                              ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                       {ep.drive_file_id && (
                         <button
                           type="button"
@@ -711,41 +1140,70 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                             setPreviewEp(ep);
                           }}
                           className="secondary-button"
-                          style={{ fontSize: '12px', fontWeight: '700' }}
+                          style={{ fontSize: '12px' }}
                         >
-                          ▶ Watch &amp; Check Overlay
+                          View Details
                         </button>
                       )}
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          openModalForEpisode({
-                            epNumber: ep.episode_number,
-                            epName: ep.ep_name,
-                            driveUrl: ep.drive_url,
-                            scheduledDate: ep.scheduled_date,
-                          })
-                        }
-                        className={
-                          ep.status === 'Changes Requested'
-                            ? 'primary-button'
-                            : 'secondary-button'
-                        }
-                        style={{ fontSize: '12px', fontWeight: '700' }}
-                      >
-                        {ep.status === 'Changes Requested'
-                          ? '↻ Re-upload Fixed Link'
-                          : 'Edit Link'}
-                      </button>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      {/* =========================================================
+          FIXED 4-OPTION BOTTOM NAVIGATION BAR
+         ========================================================= */}
+      <nav aria-label="Creator Navigation" style={bottomNavStyles.bar}>
+        <div style={bottomNavStyles.inner}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('home')}
+            style={activeTab === 'home' ? bottomNavStyles.itemActive : bottomNavStyles.item}
+          >
+            <span style={bottomNavStyles.icon}>🏠</span>
+            <span style={bottomNavStyles.label}>Home</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('shows');
+              setShowsViewMode('list');
+            }}
+            style={activeTab === 'shows' ? bottomNavStyles.itemActive : bottomNavStyles.item}
+          >
+            <span style={bottomNavStyles.icon}>🎬</span>
+            <span style={bottomNavStyles.label}>
+              Shows
+              {changesRequestedEps.length > 0 && (
+                <span style={bottomNavStyles.badge}>{changesRequestedEps.length}</span>
+              )}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('calendar')}
+            style={activeTab === 'calendar' ? bottomNavStyles.itemActive : bottomNavStyles.item}
+          >
+            <span style={bottomNavStyles.icon}>📅</span>
+            <span style={bottomNavStyles.label}>Calendar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('reports')}
+            style={activeTab === 'reports' ? bottomNavStyles.itemActive : bottomNavStyles.item}
+          >
+            <span style={bottomNavStyles.icon}>📊</span>
+            <span style={bottomNavStyles.label}>Reports</span>
+          </button>
+        </div>
+      </nav>
 
       {/* MODAL: UPLOAD / UPDATE EPISODE GOOGLE DRIVE LINK */}
       {uploadModalOpen && (
@@ -988,6 +1446,73 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
   );
 }
 
+const bottomNavStyles = {
+  bar: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#ffffff',
+    borderTop: '1px solid #cbd5e1',
+    boxShadow: '0 -4px 16px rgba(15, 23, 42, 0.08)',
+    zIndex: 900,
+    padding: '8px 16px',
+  },
+  inner: {
+    maxWidth: '720px',
+    margin: '0 auto',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '8px',
+  },
+  item: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '3px',
+    padding: '8px 6px',
+    borderRadius: '10px',
+    border: 'none',
+    backgroundColor: 'transparent',
+    color: '#64748b',
+    cursor: 'pointer',
+    fontWeight: '600',
+  },
+  itemActive: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '3px',
+    padding: '8px 6px',
+    borderRadius: '10px',
+    border: '1px solid #bfdbfe',
+    backgroundColor: '#eff6ff',
+    color: '#1e3a8a',
+    cursor: 'pointer',
+    fontWeight: '800',
+  },
+  icon: {
+    fontSize: '18px',
+    lineHeight: 1,
+  },
+  label: {
+    fontSize: '12px',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+  },
+  badge: {
+    backgroundColor: '#dc2626',
+    color: '#ffffff',
+    borderRadius: '999px',
+    padding: '1px 6px',
+    fontSize: '10px',
+    fontWeight: '800',
+  },
+};
+
 const styles = {
   creatorBadge: {
     backgroundColor: '#e0e7ff',
@@ -1013,49 +1538,73 @@ const styles = {
     fontWeight: '700',
     backgroundColor: '#ffffff',
     color: '#0f172a',
-    minWidth: '200px',
+    minWidth: '180px',
   },
-  tabBar: {
+  kpiGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+    gap: '12px',
+  },
+  kpiCard: {
+    backgroundColor: '#ffffff',
+    border: '1.5px solid #e2e8f0',
+    borderRadius: '12px',
+    padding: '16px 18px',
     display: 'flex',
-    gap: '10px',
-    marginTop: '16px',
-    paddingTop: '14px',
-    borderTop: '1px solid #e2e8f0',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
+    gap: '4px',
   },
-  tabActive: {
-    backgroundColor: '#1e3a8a',
-    color: '#ffffff',
-    border: 'none',
-    padding: '9px 16px',
-    borderRadius: '8px',
-    fontSize: '13px',
-    fontWeight: '700',
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  tabInactive: {
-    backgroundColor: '#f1f5f9',
-    color: '#475569',
-    border: '1px solid #e2e8f0',
-    padding: '9px 16px',
-    borderRadius: '8px',
-    fontSize: '13px',
-    fontWeight: '600',
-    cursor: 'pointer',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  changesAlertPill: {
-    backgroundColor: '#dc2626',
-    color: '#ffffff',
-    padding: '2px 7px',
-    borderRadius: '999px',
+  kpiLabel: {
     fontSize: '11px',
     fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: '0.04em',
+  },
+  kpiValue: {
+    fontSize: '28px',
+    fontWeight: '800',
+    color: '#0f172a',
+    lineHeight: 1.15,
+  },
+  kpiSub: {
+    fontSize: '12px',
+    color: '#64748b',
+  },
+  showsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+    gap: '12px',
+  },
+  showCard: {
+    backgroundColor: '#ffffff',
+    border: '1.5px solid #cbd5e1',
+    borderRadius: '12px',
+    padding: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    cursor: 'pointer',
+  },
+  latestBadge: {
+    backgroundColor: '#dbeafe',
+    color: '#1e3a8a',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    fontSize: '10px',
+    fontWeight: '800',
+  },
+  progressTrack: {
+    width: '100%',
+    height: '10px',
+    backgroundColor: '#e2e8f0',
+    borderRadius: '999px',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#16a34a',
+    borderRadius: '999px',
+    transition: 'width 0.3s ease',
   },
   monthInput: {
     padding: '7px 12px',
