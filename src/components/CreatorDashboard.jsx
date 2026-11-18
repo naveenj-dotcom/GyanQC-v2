@@ -77,6 +77,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
   const [modalEpName, setModalEpName] = useState('');
   const [modalDriveUrl, setModalDriveUrl] = useState('');
   const [modalScheduledDate, setModalScheduledDate] = useState('');
+  const [isNewEpisodeUpload, setIsNewEpisodeUpload] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   const [previewEp, setPreviewEp] = useState(null);
@@ -167,13 +168,26 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
     );
   };
 
+  // Compute next auto episode number = highest submitted episode number + 1
+  const getNextEpisodeNumber = () => {
+    const validNumbers = episodes
+      .filter((ep) => ep.status !== 'Not Submitted' || Boolean(ep.drive_file_id))
+      .map((ep) => Number(ep.episode_number || 0))
+      .filter((n) => n > 0);
+    if (validNumbers.length === 0) return 1;
+    return Math.max(...validNumbers) + 1;
+  };
+
   const openModalForEpisode = ({
-    epNumber = '',
+    epNumber = null,
     epName = '',
     driveUrl = '',
     scheduledDate = '',
   } = {}) => {
-    setModalEpNumber(epNumber ? String(epNumber) : '');
+    const isNew = !epNumber;
+    const resolvedNumber = isNew ? getNextEpisodeNumber() : Number(epNumber);
+    setIsNewEpisodeUpload(isNew);
+    setModalEpNumber(String(resolvedNumber));
     setModalEpName(epName || '');
     setModalDriveUrl(driveUrl || '');
     setModalScheduledDate(scheduledDate || '');
@@ -221,7 +235,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
     const epNum = parseInt(modalEpNumber, 10);
     if (!epNum || epNum < 1) {
-      alert('Please enter a valid Episode Number (e.g., 1, 2, 3...).');
+      alert('Invalid Episode Number.');
       return;
     }
 
@@ -368,7 +382,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
   return (
     <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px 20px 104px' }}>
-      {/* TOP CREATOR HEADER BAR */}
+      {/* TOP CREATOR HEADER BAR (NO UPLOAD BUTTON ON TOP RIGHT) */}
       <div className="panel" style={{ marginBottom: '18px' }}>
         <div
           style={{
@@ -390,8 +404,8 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
               {selectedShow?.show_name}
             </h2>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-              {activeTab === 'home' && 'Creator workspace overview, pending re-edits, and quick actions.'}
-              {activeTab === 'shows' && 'Browse your assigned shows (latest first) and manage episodes in descending order.'}
+              {activeTab === 'home' && 'Creator workspace overview, pending re-edits, and assigned shows.'}
+              {activeTab === 'shows' && 'Browse your assigned shows (latest first) and upload or manage episodes.'}
               {activeTab === 'calendar' && 'View scheduled episode release dates and upload Google Drive links.'}
               {activeTab === 'reports' && 'Track QC approval rates, re-edit status, and QCstar timestamp notes.'}
             </p>
@@ -420,20 +434,12 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                 ))}
               </select>
             )}
-
-            <button
-              type="button"
-              onClick={() => openModalForEpisode()}
-              className="primary-button"
-            >
-              + Submit Episode Link
-            </button>
           </div>
         </div>
       </div>
 
       {/* =========================================================
-          BOTTOM TAB 1: HOME
+          BOTTOM TAB 1: HOME (NO TOP-RIGHT UPLOAD BUTTON)
          ========================================================= */}
       {activeTab === 'home' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
@@ -499,7 +505,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             <div className="panel-heading">
               <div>
                 <h3>Latest Assigned Shows</h3>
-                <p>Newest shows appear first. Click a show to view its episodes (latest episode on top).</p>
+                <p>Click any show to open it and upload or view episodes (latest episode on top).</p>
               </div>
               <button
                 type="button"
@@ -536,7 +542,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                     Show ID: <strong>{s.show_id || s.creator_id || '—'}</strong>
                   </span>
                   <span style={{ fontSize: '12px', color: '#1e3a8a', fontWeight: '700', marginTop: '4px' }}>
-                    Open Episodes →
+                    Open Show &amp; Episodes →
                   </span>
                 </div>
               ))}
@@ -552,11 +558,14 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
               </div>
               <button
                 type="button"
-                onClick={() => openModalForEpisode()}
-                className="primary-button"
+                onClick={() => {
+                  setActiveTab('shows');
+                  setShowsViewMode('detail');
+                }}
+                className="secondary-button"
                 style={{ fontSize: '13px' }}
               >
-                + Upload Episode
+                Manage in Show →
               </button>
             </div>
 
@@ -565,7 +574,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             ) : submittedEpisodes.length === 0 ? (
               <div style={styles.emptyBox}>
                 <strong>No episodes uploaded yet for {selectedShow?.show_name}.</strong>
-                <span>Click <strong>+ Upload Episode</strong> to submit your first episode link.</span>
+                <span>Open the show in <strong>Shows</strong> to upload your first episode.</span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -642,7 +651,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
               <div className="panel-heading">
                 <div>
                   <h3>Your Shows ({sortedShows.length})</h3>
-                  <p>Latest shows appear at the top. Select any show to view its episodes in descending order.</p>
+                  <p>Latest shows appear at the top. Select any show to upload or view its episodes.</p>
                 </div>
               </div>
 
@@ -687,7 +696,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
                       <div style={{ marginTop: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <span style={{ fontSize: '12px', fontWeight: '700', color: '#1e3a8a' }}>
-                          View Episodes (Latest First) →
+                          Open Show &amp; Upload Episodes →
                         </span>
                       </div>
                     </div>
@@ -724,7 +733,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                   onClick={() => openModalForEpisode()}
                   className="primary-button"
                 >
-                  + Submit New Episode
+                  + Upload Ep {getNextEpisodeNumber()}
                 </button>
               </div>
 
@@ -734,7 +743,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                 <div style={styles.emptyBox}>
                   <strong>No episodes submitted yet for {selectedShow?.show_name}.</strong>
                   <span>
-                    Click <strong>+ Submit New Episode</strong> to paste your Google Drive link.
+                    Click <strong>+ Upload Ep {getNextEpisodeNumber()}</strong> above to submit the first episode for this show.
                   </span>
                 </div>
               ) : (
@@ -948,7 +957,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                               key={item.id}
                               onClick={() =>
                                 openModalForEpisode({
-                                  epNumber: epNum || '',
+                                  epNumber: epNum || getNextEpisodeNumber(),
                                   epName:
                                     matchingEp?.ep_name ||
                                     item.notes ||
@@ -1205,7 +1214,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
         </div>
       </nav>
 
-      {/* MODAL: UPLOAD / UPDATE EPISODE GOOGLE DRIVE LINK */}
+      {/* MODAL: UPLOAD / UPDATE EPISODE GOOGLE DRIVE LINK (AUTO-FIXED EPISODE NUMBER) */}
       {uploadModalOpen && (
         <div
           style={modalStyles.overlay}
@@ -1222,7 +1231,9 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: '19px', color: '#0f172a' }}>
-                  Submit Episode Video Link
+                  {isNewEpisodeUpload
+                    ? `Upload Episode ${modalEpNumber}`
+                    : `Update Episode ${modalEpNumber}`}
                 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
                   Show: <strong>{selectedShow?.show_name}</strong> · Sent directly to QCstar for review.
@@ -1251,16 +1262,26 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             >
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
-                  <label style={styles.label}>Episode Number *</label>
+                  <label style={styles.label}>Episode Number (Auto)</label>
                   <input
                     type="number"
-                    min="1"
-                    required
-                    placeholder="e.g. 1"
+                    readOnly
                     value={modalEpNumber}
-                    onChange={(e) => setModalEpNumber(e.target.value)}
-                    style={styles.input}
+                    style={{
+                      ...styles.input,
+                      backgroundColor: '#f1f5f9',
+                      color: '#0f172a',
+                      fontWeight: '800',
+                      cursor: 'not-allowed',
+                    }}
                   />
+                  <span style={{ display: 'block', fontSize: '11px', color: '#64748b', marginTop: '3px' }}>
+                    {isNewEpisodeUpload
+                      ? Number(modalEpNumber) > 1
+                        ? `Auto-set after Ep ${Number(modalEpNumber) - 1}`
+                        : 'First episode for this show'
+                      : 'Locked to existing episode'}
+                  </span>
                 </div>
 
                 <div>
@@ -1279,7 +1300,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Episode 1 - Pilot"
+                  placeholder={`e.g. Episode ${modalEpNumber}`}
                   value={modalEpName}
                   onChange={(e) => setModalEpName(e.target.value)}
                   style={styles.input}
@@ -1307,7 +1328,9 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                 className="primary-button"
                 style={{ marginTop: '6px' }}
               >
-                {submitting ? 'Submitting to QCstar...' : 'Submit Video to QCstar →'}
+                {submitting
+                  ? 'Submitting to QCstar...'
+                  : `Submit Episode ${modalEpNumber} to QCstar →`}
               </button>
             </form>
           </div>
