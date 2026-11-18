@@ -1131,12 +1131,13 @@ export default function App() {
                           title={videoName || "Google Drive Video"}
                           allow="autoplay; fullscreen"
                           style={{
-                            width: "104%",
+                            width: "100%",
                             height: "100%",
                             border: "none",
                             backgroundColor: "#000000",
                             display: "block",
-                            flexShrink: 0,
+                            transform: "scale(1.045)",
+                            transformOrigin: "center center",
                           }}
                           onLoad={() => setIsBuffering(false)}
                         />

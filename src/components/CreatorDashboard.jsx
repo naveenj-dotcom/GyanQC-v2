@@ -1302,9 +1302,10 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                     title={`Ep ${previewEp.episode_number}`}
                     allow="autoplay; fullscreen"
                     style={{
-                      width: '104%',
+                      width: '100%',
                       height: '55vh',
-                      flexShrink: 0,
+                      transform: 'scale(1.045)',
+                      transformOrigin: 'center center',
                       border: 'none',
                       backgroundColor: '#000000',
                       display: 'block',
