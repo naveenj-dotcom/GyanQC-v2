@@ -33,6 +33,12 @@ function sortLatestFirst(list) {
   });
 }
 
+// Generate a clean unique Creator ID like CR-4829
+function generateCreatorCode() {
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  return `CR-${randomNum}`;
+}
+
 export default function QcstarPortal({
   activeTab,
   onNavigate,
@@ -71,12 +77,26 @@ export default function QcstarPortal({
   const [endingShow, setEndingShow] = useState(false);
   const [reopeningId, setReopeningId] = useState(null);
 
-  // Create New Show Popup state (inside Shows tab)
+  // Creators Directory View & List state
+  const [creatorsList, setCreatorsList] = useState([]);
+  const [loadingCreators, setLoadingCreators] = useState(false);
+  const [viewingCreatorsPage, setViewingCreatorsPage] = useState(false);
+  const [creatorSearch, setCreatorSearch] = useState('');
+  const [copiedTableCreatorId, setCopiedTableCreatorId] = useState(null);
+
+  // Create New Creator Modal state (opened from Creators Directory page)
+  const [creatorModalOpen, setCreatorModalOpen] = useState(false);
+  const [newCreatorName, setNewCreatorName] = useState('');
+  const [newCreatorEmail, setNewCreatorEmail] = useState('');
+  const [creatingCreator, setCreatingCreator] = useState(false);
+  const [generatedCreator, setGeneratedCreator] = useState(null);
+  const [copiedCreatorId, setCopiedCreatorId] = useState(false);
+
+  // Create New Show Popup state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newShowName, setNewShowName] = useState('');
-  const [newAgencyName, setNewAgencyName] = useState('');
-  const [newCreatorName, setNewCreatorName] = useState('');
-  const [newShowId, setNewShowId] = useState('');
+  const [newShowDescription, setNewShowDescription] = useState('');
+  const [linkCreatorId, setLinkCreatorId] = useState('');
   const [creatingShow, setCreatingShow] = useState(false);
 
   // Latest created show always appears at the top
@@ -88,6 +108,25 @@ export default function QcstarPortal({
 
   const activeShows = sortedShows.filter((s) => s.status !== 'ended');
   const endedShows = sortedShows.filter((s) => s.status === 'ended');
+
+  const fetchCreators = async () => {
+    setLoadingCreators(true);
+    const { data } = await supabase
+      .from('qc_creators')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (data) setCreatorsList(data);
+    setLoadingCreators(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'shows') {
+      fetchCreators();
+    } else {
+      setViewingCreatorsPage(false);
+      setSelectedShowForQueue(null);
+    }
+  }, [activeTab]);
 
   const handleCopyDriveLink = (url, id) => {
     if (!url) return;
@@ -151,12 +190,6 @@ export default function QcstarPortal({
     setLoadingQueue(false);
   };
 
-  useEffect(() => {
-    if (activeTab !== 'shows') {
-      setSelectedShowForQueue(null);
-    }
-  }, [activeTab]);
-
   // Any QCstar can end ANY active show regardless of who created it
   const handleConfirmEndShow = async () => {
     if (!showToEnd) return;
@@ -209,8 +242,81 @@ export default function QcstarPortal({
     }
   };
 
+  // Create New Creator & Generate Unique Creator ID
+  const handleCreateCreatorSubmit = async (e) => {
+    e.preventDefault();
+    const cleanName = newCreatorName.trim();
+    const cleanEmail = newCreatorEmail.trim().toLowerCase();
+    if (!cleanName || !cleanEmail) return;
+
+    setCreatingCreator(true);
+
+    // Check if creator email already exists
+    const { data: existingCreator } = await supabase
+      .from('qc_creators')
+      .select('*')
+      .eq('creator_email', cleanEmail)
+      .maybeSingle();
+
+    if (existingCreator) {
+      setCreatingCreator(false);
+      setGeneratedCreator(existingCreator);
+      await fetchCreators();
+      return;
+    }
+
+    // Generate a unique Creator ID (retry if collision)
+    let createdRecord = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidateId = generateCreatorCode();
+      const { data, error } = await supabase
+        .from('qc_creators')
+        .insert([
+          {
+            creator_id: candidateId,
+            creator_name: cleanName,
+            creator_email: cleanEmail,
+            created_by_email: currentUser.email,
+            created_by_name: currentUser.full_name,
+          },
+        ])
+        .select('*')
+        .single();
+
+      if (!error && data) {
+        createdRecord = data;
+        break;
+      }
+      if (error && !error.message.toLowerCase().includes('creator_id')) {
+        alert('Error creating Creator: ' + error.message);
+        setCreatingCreator(false);
+        return;
+      }
+    }
+
+    setCreatingCreator(false);
+    if (createdRecord) {
+      setGeneratedCreator(createdRecord);
+      setNewCreatorName('');
+      setNewCreatorEmail('');
+      await fetchCreators();
+    }
+  };
+
+  // Live match of entered Creator ID inside Create Show modal
+  const matchedCreator = creatorsList.find(
+    (c) => c.creator_id.toUpperCase() === linkCreatorId.trim().toUpperCase()
+  );
+
+  // Create New Show connected to Creator ID
   const handleCreateShowSubmit = async (e) => {
     e.preventDefault();
+
+    if (!matchedCreator) {
+      alert('Invalid Creator ID. Please enter a valid Creator ID or create a Creator first.');
+      return;
+    }
+
     setCreatingShow(true);
 
     const { data: createdShow, error } = await supabase
@@ -218,9 +324,12 @@ export default function QcstarPortal({
       .insert([
         {
           show_name: newShowName.trim(),
-          agency_name: newAgencyName.trim(),
-          creator_name: newCreatorName.trim(),
-          show_id: newShowId.trim(),
+          description: newShowDescription.trim(),
+          creator_id: matchedCreator.creator_id,
+          creator_name: matchedCreator.creator_name,
+          creator_email: matchedCreator.creator_email,
+          agency_name: matchedCreator.creator_name,
+          show_id: matchedCreator.creator_id,
           created_by_email: currentUser.email,
           created_by_name: currentUser.full_name,
           status: 'active',
@@ -249,11 +358,13 @@ export default function QcstarPortal({
 
     setCreatingShow(false);
     setNewShowName('');
-    setNewAgencyName('');
-    setNewCreatorName('');
-    setNewShowId('');
+    setNewShowDescription('');
+    setLinkCreatorId('');
     setShowCreateModal(false);
-    alert(`Show "${createdShow.show_name}" created successfully!`);
+    setViewingCreatorsPage(false);
+    alert(
+      `Show "${createdShow.show_name}" created and linked to ${matchedCreator.creator_name} (${matchedCreator.creator_id})!`
+    );
     onShowCreated(createdShow);
   };
 
@@ -553,29 +664,182 @@ export default function QcstarPortal({
     );
   }
 
-  // TAB 2: SHOWS (Shared across all QCstars: Latest Shows first + Latest/Re-edited Episodes first)
+  // TAB 2: SHOWS & CREATORS DIRECTORY
   if (activeTab === 'shows') {
     const displayedShows = showsListFilter === 'active' ? activeShows : endedShows;
+    const filteredCreators = creatorsList.filter((c) => {
+      const q = creatorSearch.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (c.creator_name || '').toLowerCase().includes(q) ||
+        (c.creator_email || '').toLowerCase().includes(q) ||
+        (c.creator_id || '').toLowerCase().includes(q)
+      );
+    });
 
     return (
       <div style={{ maxWidth: '1040px', margin: '0 auto', padding: '20px' }}>
-        {!selectedShowForQueue ? (
+        {viewingCreatorsPage ? (
+          /* CREATORS DIRECTORY PAGE */
           <div className="panel">
             <div className="panel-heading">
               <div>
-                <h3>All Shows (Latest First)</h3>
+                <button
+                  type="button"
+                  onClick={() => setViewingCreatorsPage(false)}
+                  className="secondary-button"
+                  style={{ marginBottom: '10px', padding: '5px 10px', fontSize: '12px' }}
+                >
+                  ← Back to All Shows
+                </button>
+                <h3>Creators Directory ({creatorsList.length})</h3>
                 <p>
-                  Every QCstar can review episodes, edit schedules, and end or reopen any show across the team.
+                  All registered Creators, their Login Email, and unique Creator IDs for linking Shows.
                 </p>
               </div>
 
               <button
                 type="button"
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setGeneratedCreator(null);
+                  setNewCreatorName('');
+                  setNewCreatorEmail('');
+                  setCreatorModalOpen(true);
+                }}
                 className="primary-button"
               >
-                + Create New Show
+                + Create New Creator
               </button>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <input
+                type="text"
+                placeholder="Search by Creator Name, Email, or Creator ID (e.g. CR-9531)..."
+                value={creatorSearch}
+                onChange={(e) => setCreatorSearch(e.target.value)}
+                style={{ ...styles.input, maxWidth: '420px' }}
+              />
+            </div>
+
+            {loadingCreators ? (
+              <p style={{ color: '#64748b' }}>Loading creators...</p>
+            ) : filteredCreators.length === 0 ? (
+              <div style={styles.emptyBox}>
+                <strong>
+                  {creatorsList.length === 0
+                    ? 'No Creators added yet.'
+                    : 'No matching Creators found.'}
+                </strong>
+                <span>
+                  Click <strong>+ Create New Creator</strong> above to generate a Creator ID.
+                </span>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Creator Name</th>
+                      <th style={styles.th}>Email (Login)</th>
+                      <th style={styles.th}>Creator ID</th>
+                      <th style={styles.th}>Linked Shows</th>
+                      <th style={styles.th}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredCreators.map((c) => {
+                      const linkedCount = sortedShows.filter(
+                        (s) =>
+                          (s.creator_id || '').toUpperCase() ===
+                            (c.creator_id || '').toUpperCase() ||
+                          (s.creator_email || '').toLowerCase() ===
+                            (c.creator_email || '').toLowerCase()
+                      ).length;
+
+                      return (
+                        <tr key={c.id} style={styles.tr}>
+                          <td style={styles.td}>
+                            <strong>{c.creator_name}</strong>
+                          </td>
+                          <td style={styles.td}>{c.creator_email}</td>
+                          <td style={styles.td}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                              <code style={styles.creatorCodeBadge}>{c.creator_id}</code>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard?.writeText(c.creator_id);
+                                  setCopiedTableCreatorId(c.id);
+                                  setTimeout(() => setCopiedTableCreatorId(null), 2000);
+                                }}
+                                className="secondary-button"
+                                style={{ padding: '4px 8px', fontSize: '11px' }}
+                              >
+                                {copiedTableCreatorId === c.id ? '✓ Copied' : 'Copy'}
+                              </button>
+                            </div>
+                          </td>
+                          <td style={styles.td}>
+                            {linkedCount} {linkedCount === 1 ? 'Show' : 'Shows'}
+                          </td>
+                          <td style={styles.td}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLinkCreatorId(c.creator_id);
+                                setShowCreateModal(true);
+                              }}
+                              className="secondary-button"
+                              style={{ padding: '6px 12px', fontSize: '12px', fontWeight: '700' }}
+                            >
+                              + Create Show
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : !selectedShowForQueue ? (
+          /* ALL SHOWS PAGE */
+          <div className="panel">
+            <div className="panel-heading">
+              <div>
+                <h3>All Shows (Latest First)</h3>
+                <p>
+                  Manage Creators &amp; Creator IDs, or create a Show and link it using a Creator ID.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchCreators();
+                    setCreatorSearch('');
+                    setViewingCreatorsPage(true);
+                  }}
+                  className="secondary-button"
+                  style={{ fontWeight: '700', borderColor: '#1e3a8a', color: '#1e3a8a' }}
+                >
+                  Creators ({creatorsList.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    fetchCreators();
+                    setShowCreateModal(true);
+                  }}
+                  className="primary-button"
+                >
+                  + Create New Show
+                </button>
+              </div>
             </div>
 
             {/* Active vs Ended Shows Toggle */}
@@ -613,7 +877,7 @@ export default function QcstarPortal({
                 </strong>
                 <span>
                   {showsListFilter === 'active'
-                    ? 'Click "+ Create New Show" above to add a Show.'
+                    ? 'Click "Creators" to get a Creator ID, then click "+ Create New Show".'
                     : 'Shows ended by any QCstar appear here and can be reopened anytime.'}
                 </span>
               </div>
@@ -621,6 +885,7 @@ export default function QcstarPortal({
               <div style={styles.showsListGrid}>
                 {displayedShows.map((s) => {
                   const isEnded = s.status === 'ended';
+                  const displayCreatorId = s.creator_id || s.show_id;
                   return (
                     <div
                       key={s.id}
@@ -632,7 +897,7 @@ export default function QcstarPortal({
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                        <span style={styles.showIdTag}>ID: {s.show_id}</span>
+                        <span style={styles.showIdTag}>Creator ID: {displayCreatorId}</span>
                         {isEnded ? (
                           <button
                             type="button"
@@ -662,8 +927,14 @@ export default function QcstarPortal({
                       <h4 style={{ margin: '10px 0 4px', fontSize: '18px', color: '#0f172a' }}>
                         {s.show_name}
                       </h4>
+                      {s.description && (
+                        <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
+                          {s.description}
+                        </p>
+                      )}
                       <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#64748b' }}>
-                        Agency: <strong>{s.agency_name}</strong> · Creator: <strong>{s.creator_name}</strong>
+                        Creator: <strong>{s.creator_name}</strong>
+                        {s.creator_email ? ` (${s.creator_email})` : ''}
                       </p>
                       {s.created_by_name && (
                         <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#64748b' }}>
@@ -693,6 +964,7 @@ export default function QcstarPortal({
             )}
           </div>
         ) : (
+          /* SHOW QUEUE DRILLDOWN (PENDING QC & APPROVED DRIVE LINKS) */
           <div className="panel">
             <div className="panel-heading">
               <div>
@@ -903,11 +1175,10 @@ export default function QcstarPortal({
                 End Show Confirmation
               </h3>
               <p style={{ margin: '0 0 18px', fontSize: '14px', color: '#475569', lineHeight: 1.5 }}>
-                Are you sure you want to end <strong>{showToEnd.show_name}</strong> (ID:{' '}
-                <strong>{showToEnd.show_id}</strong>)?
+                Are you sure you want to end <strong>{showToEnd.show_name}</strong>?
                 <br />
                 <span style={{ fontSize: '13px', color: '#991b1b' }}>
-                  Once ended, this Show will move to Ended Shows and Creator/Agency login will be closed (any QCstar can reopen it later if needed).
+                  Once ended, this Show will move to Ended Shows and will no longer appear in the Creator's active dashboard (any QCstar can reopen it later if needed).
                 </span>
               </p>
 
@@ -933,7 +1204,111 @@ export default function QcstarPortal({
           </div>
         )}
 
-        {/* Create New Show Popup inside Shows Tab */}
+        {/* MODAL: Create New Creator & Generate Creator ID */}
+        {creatorModalOpen && (
+          <div style={modalStyles.overlay} onClick={() => !creatingCreator && setCreatorModalOpen(false)}>
+            <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '19px', color: '#0f172a' }}>Create New Creator</h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
+                    Generates a unique Creator ID to connect one or multiple Shows.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={creatingCreator}
+                  onClick={() => setCreatorModalOpen(false)}
+                  style={{ background: '#f1f5f9', border: 'none', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              {!generatedCreator ? (
+                <form onSubmit={handleCreateCreatorSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div>
+                    <label style={styles.label}>Creator Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Vikram Mehta"
+                      value={newCreatorName}
+                      onChange={(e) => setNewCreatorName(e.target.value)}
+                      style={styles.input}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={styles.label}>Creator Email (used for Login) *</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="e.g. vikram@studio.com"
+                      value={newCreatorEmail}
+                      onChange={(e) => setNewCreatorEmail(e.target.value)}
+                      style={styles.input}
+                    />
+                  </div>
+
+                  <button type="submit" disabled={creatingCreator} className="primary-button" style={{ marginTop: '6px' }}>
+                    {creatingCreator ? 'Generating Creator ID...' : 'Create Creator & Generate ID'}
+                  </button>
+                </form>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ padding: '16px', borderRadius: '10px', backgroundColor: '#f0fdf4', border: '1.5px solid #86efac' }}>
+                    <span style={{ fontSize: '12px', fontWeight: '700', color: '#166534' }}>
+                      ✓ CREATOR READY
+                    </span>
+                    <h4 style={{ margin: '6px 0 2px', fontSize: '17px', color: '#0f172a' }}>
+                      {generatedCreator.creator_name}
+                    </h4>
+                    <p style={{ margin: '0 0 12px', fontSize: '13px', color: '#475569' }}>
+                      Login Email: <strong>{generatedCreator.creator_email}</strong>
+                    </p>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#ffffff', padding: '10px 12px', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+                      <div>
+                        <span style={{ display: 'block', fontSize: '11px', color: '#64748b' }}>Creator ID</span>
+                        <strong style={{ fontSize: '18px', color: '#1e3a8a', letterSpacing: '0.5px' }}>
+                          {generatedCreator.creator_id}
+                        </strong>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(generatedCreator.creator_id);
+                          setCopiedCreatorId(true);
+                          setTimeout(() => setCopiedCreatorId(false), 2000);
+                        }}
+                        className="secondary-button"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                      >
+                        {copiedCreatorId ? '✓ Copied!' : 'Copy ID'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idToUse = generatedCreator.creator_id;
+                      setCreatorModalOpen(false);
+                      setLinkCreatorId(idToUse);
+                      setShowCreateModal(true);
+                    }}
+                    className="primary-button"
+                  >
+                    + Create Show for {generatedCreator.creator_name} →
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: Create New Show & Connect via Creator ID */}
         {showCreateModal && (
           <div style={modalStyles.overlay} onClick={() => !creatingShow && setShowCreateModal(false)}>
             <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
@@ -941,7 +1316,7 @@ export default function QcstarPortal({
                 <div>
                   <h3 style={{ margin: 0, fontSize: '19px', color: '#0f172a' }}>Create New Show</h3>
                   <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
-                    Show ID (POC Phone) will be the Creator/Agency login credential.
+                    Connect this Show to a Creator using their Creator ID.
                   </p>
                 </div>
                 <button
@@ -968,43 +1343,98 @@ export default function QcstarPortal({
                 </div>
 
                 <div>
-                  <label style={styles.label}>Agency Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Red Chillies Digital"
-                    value={newAgencyName}
-                    onChange={(e) => setNewAgencyName(e.target.value)}
-                    style={styles.input}
+                  <label style={styles.label}>Description</label>
+                  <textarea
+                    rows="2"
+                    placeholder="Brief description of the show, format, or genre..."
+                    value={newShowDescription}
+                    onChange={(e) => setNewShowDescription(e.target.value)}
+                    style={{ ...styles.input, resize: 'vertical', fontFamily: 'inherit' }}
                   />
                 </div>
 
                 <div>
-                  <label style={styles.label}>Creator Name *</label>
+                  <label style={styles.label}>Creator ID (to connect Show to Creator) *</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Vikram Mehta"
-                    value={newCreatorName}
-                    onChange={(e) => setNewCreatorName(e.target.value)}
+                    placeholder="e.g. CR-4821"
+                    value={linkCreatorId}
+                    onChange={(e) => setLinkCreatorId(e.target.value)}
                     style={styles.input}
                   />
+
+                  {linkCreatorId.trim() && (
+                    <div
+                      style={{
+                        marginTop: '6px',
+                        padding: '8px 10px',
+                        borderRadius: '7px',
+                        fontSize: '12px',
+                        backgroundColor: matchedCreator ? '#dcfce7' : '#fee2e2',
+                        color: matchedCreator ? '#166534' : '#991b1b',
+                      }}
+                    >
+                      {matchedCreator ? (
+                        <>
+                          ✓ Connected to: <strong>{matchedCreator.creator_name}</strong> ({matchedCreator.creator_email})
+                        </>
+                      ) : (
+                        <>
+                          ✕ Creator ID not found. Check the ID or{' '}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowCreateModal(false);
+                              setGeneratedCreator(null);
+                              setCreatorModalOpen(true);
+                            }}
+                            style={{ background: 'none', border: 'none', color: '#1e3a8a', fontWeight: '700', textDecoration: 'underline', cursor: 'pointer', padding: 0 }}
+                          >
+                            create a new Creator first
+                          </button>
+                          .
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {creatorsList.length > 0 && !matchedCreator && (
+                    <div style={{ marginTop: '8px' }}>
+                      <span style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                        Quick select existing Creator:
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '85px', overflowY: 'auto' }}>
+                        {creatorsList.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setLinkCreatorId(c.creator_id)}
+                            style={{
+                              backgroundColor: '#f1f5f9',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '6px',
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              color: '#0f172a',
+                            }}
+                          >
+                            <strong>{c.creator_id}</strong> · {c.creator_name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div>
-                  <label style={styles.label}>Show ID (POC Phone Number) *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 9876543210"
-                    value={newShowId}
-                    onChange={(e) => setNewShowId(e.target.value)}
-                    style={styles.input}
-                  />
-                </div>
-
-                <button type="submit" disabled={creatingShow} className="primary-button" style={{ marginTop: '6px' }}>
-                  {creatingShow ? 'Creating Show...' : 'Create Show & Generate Login Credentials'}
+                <button
+                  type="submit"
+                  disabled={creatingShow || !matchedCreator}
+                  className="primary-button"
+                  style={{ marginTop: '6px', opacity: !matchedCreator ? 0.6 : 1 }}
+                >
+                  {creatingShow ? 'Creating Show...' : 'Create Show & Connect to Creator'}
                 </button>
               </form>
             </div>
@@ -1108,6 +1538,36 @@ const styles = {
     padding: '6px 8px',
     borderRadius: '7px',
     lineHeight: 1.25,
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '14px',
+  },
+  th: {
+    textAlign: 'left',
+    padding: '10px 12px',
+    borderBottom: '2px solid #e2e8f0',
+    color: '#475569',
+    fontSize: '12px',
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
+  },
+  tr: {
+    borderBottom: '1px solid #f1f5f9',
+  },
+  td: {
+    padding: '12px',
+    color: '#0f172a',
+  },
+  creatorCodeBadge: {
+    backgroundColor: '#e0e7ff',
+    color: '#1e3a8a',
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontWeight: '800',
+    fontSize: '13px',
+    letterSpacing: '0.4px',
   },
   emptyBox: {
     padding: '28px 20px',
