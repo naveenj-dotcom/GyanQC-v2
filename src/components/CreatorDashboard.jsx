@@ -1,3 +1,4 @@
+import { getStreamUrl, abortOtherDownloads, upgradeVideoElementToBlob } from "../utils/videoStreamCache";
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import ReferenceOverlay from '../ReferenceOverlay';
@@ -1269,7 +1270,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
               <div className="video-frame-wrapper" style={{ maxHeight: '55vh' }}>
                 <video
                   ref={videoRef}
-                  src={`${VIDEO_PROXY_URL}?id=${previewEp.drive_file_id}`}
+                  src={getStreamUrl(previewEp.drive_file_id)}
                   controls
                   playsInline
                   className="review-video"

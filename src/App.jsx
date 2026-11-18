@@ -1,3 +1,4 @@
+import { getStreamUrl, isVideoCached, abortOtherDownloads, warmVideoToRam, upgradeVideoElementToBlob } from "./utils/videoStreamCache";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReferenceOverlay from "./ReferenceOverlay";
 import Login from "./components/Login";
@@ -441,17 +442,14 @@ export default function App() {
       setVideoUrl(cachedBlob);
       setIsBuffering(false);
     } else {
-      if (prefetchAbortRef.current) {
-      prefetchAbortRef.current.abort();
-      prefetchAbortRef.current = null;
-    }
+      abortOtherDownloads([ep.drive_file_id]);
     if (videoRef.current) {
       videoRef.current.pause();
       videoRef.current.removeAttribute("src");
       videoRef.current.load();
     }
-    const cachedNext = videoBlobCacheRef.current.get(ep.drive_file_id);
-    setVideoUrl(cachedNext || `${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`);
+    setVideoUrl(getStreamUrl(ep.drive_file_id));
+    if (isVideoCached(ep.drive_file_id)) setIsBuffering(false);
       warmDriveVideoToBlob(ep.drive_file_id, { swapIfActive: true });
     }
     setVideoName(`Ep ${ep.episode_number}: ${ep.ep_name || "Untitled"}`);
@@ -544,7 +542,7 @@ export default function App() {
     setActiveEpisode(null);
     setIsBuffering(true);
     lastSecondRef.current = -1;
-    setVideoUrl(`${VIDEO_PROXY_URL}?id=${fileId}`);
+    setVideoUrl(getStreamUrl(fileId));
     setVideoName(`Google Drive Video (${fileId.slice(0, 6)}...)`);
     setCurrentTime(0);
     resetFeedbackHistory([]);
@@ -1105,6 +1103,9 @@ export default function App() {
                       onWaiting={() => setIsBuffering(true)}
                       onCanPlay={() => {
                         setIsBuffering(false);
+                        if (activeEpisode?.drive_file_id) {
+                          upgradeVideoElementToBlob(videoRef.current, activeEpisode.drive_file_id, setVideoUrl);
+                        }
                         if (activeEpisode && Array.isArray(showEpisodes)) {
                           const submitted = [...showEpisodes]
                             .filter((item) => Boolean(item.drive_file_id))
@@ -1112,7 +1113,7 @@ export default function App() {
                           const idx = submitted.findIndex((item) => item.id === activeEpisode.id);
                           const nextEp = idx >= 0 ? submitted[idx + 1] : null;
                           if (nextEp?.drive_file_id) {
-                            prewarmNextEpisodeToRam(nextEp.drive_file_id);
+                            warmVideoToRam(nextEp.drive_file_id);
                           }
                         }
                       }}
