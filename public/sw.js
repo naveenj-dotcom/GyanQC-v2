@@ -6,6 +6,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  event.respondWith(fetch(event.request));
+});
+
 self.addEventListener('push', (event) => {
   let data = {
     title: '🎬 Video Target Today — GyanQC',
@@ -27,8 +32,8 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title, {
       body: data.body,
-      icon: '/favicon.svg',
-      badge: '/favicon.svg',
+      icon: '/api/app-icon',
+      badge: '/api/app-icon',
       vibrate: [200, 100, 200],
       requireInteraction: true,
       data: { url: data.url || '/' },
