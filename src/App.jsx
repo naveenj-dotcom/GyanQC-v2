@@ -177,7 +177,7 @@ export default function App() {
   const [driveUrl, setDriveUrl] = useState("");
   const [driveError, setDriveError] = useState("");
   const [isBuffering, setIsBuffering] = useState(false);
-  const [streamMode, setStreamMode] = useState("adaptive");
+  const [streamMode, setStreamMode] = useState("proxy");
   const [adaptiveSeekSec, setAdaptiveSeekSec] = useState(0);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
