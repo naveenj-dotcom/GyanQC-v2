@@ -1267,7 +1267,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             </div>
 
             <div className="video-stage" style={{ minHeight: '360px', marginBottom: '12px' }}>
-              <div className="video-frame-wrapper" style={{ maxHeight: '55vh' }}>
+              <div className="video-frame-wrapper" style={{ height: "55vh", maxHeight: "55vh", width: "auto", aspectRatio: "9 / 16", margin: "0 auto" }}>
                 {creatorStreamMode === "adaptive" ? (
                   <iframe
                     key={`${previewEp.drive_file_id}-${creatorSeekSec}`}
