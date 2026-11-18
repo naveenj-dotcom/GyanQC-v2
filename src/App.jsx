@@ -519,6 +519,10 @@ export default function App() {
   };
 
   const handleSaveDecision = async (newStatus) => {
+    if (newStatus === "Approved" && feedback.length > 0) {
+      alert("Cannot approve while feedback items exist. Delete all feedback items first, or click \"Request Changes\".");
+      return;
+    }
     setStatus(newStatus);
     if (!activeEpisode) return;
 
@@ -1206,11 +1210,29 @@ export default function App() {
                 </div>
               )}
 
+              {feedback.length > 0 && (
+                <p style={{ margin: "8px 0 4px", fontSize: "12px", color: "#b45309", fontWeight: "600" }}>
+                  ⚠ Remove all feedback items to enable Approve, or click Request Changes.
+                </p>
+              )}
+
               <div className="review-actions">
                 <button
                   className="approve-button"
                   type="button"
-                  disabled={!videoUrl || savingReview}
+                  disabled={!videoUrl || savingReview || feedback.length > 0}
+                  title={
+                    feedback.length > 0
+                      ? "Delete all feedback items before approving"
+                      : "Approve Video"
+                  }
+                  style={{
+                    opacity: !videoUrl || savingReview || feedback.length > 0 ? 0.45 : 1,
+                    cursor:
+                      !videoUrl || savingReview || feedback.length > 0
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
                   onClick={() => handleSaveDecision("Approved")}
                 >
                   {savingReview ? "Saving..." : "✓ Approve Video"}
