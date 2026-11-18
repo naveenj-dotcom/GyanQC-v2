@@ -539,6 +539,10 @@ export default function App() {
       alert("Cannot approve while feedback items exist. Delete all feedback items first, or click \"Request Changes\".");
       return;
     }
+    if (newStatus === "Changes Requested" && feedback.length === 0) {
+      alert("Add at least one feedback note before clicking \"Request Changes\".");
+      return;
+    }
     setStatus(newStatus);
     if (!activeEpisode) return;
 
@@ -1352,7 +1356,19 @@ export default function App() {
                 <button
                   className="request-button"
                   type="button"
-                  disabled={!videoUrl || savingReview}
+                  disabled={!videoUrl || savingReview || feedback.length === 0}
+                  title={
+                    feedback.length === 0
+                      ? "Add at least one feedback item before requesting changes"
+                      : "Request Changes"
+                  }
+                  style={{
+                    opacity: !videoUrl || savingReview || feedback.length === 0 ? 0.45 : 1,
+                    cursor:
+                      !videoUrl || savingReview || feedback.length === 0
+                        ? "not-allowed"
+                        : "pointer",
+                  }}
                   onClick={() => handleSaveDecision("Changes Requested")}
                 >
                   {savingReview ? "Saving..." : "Request Changes"}
