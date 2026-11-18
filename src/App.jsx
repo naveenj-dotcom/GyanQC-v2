@@ -13,6 +13,14 @@ import "./App.css";
 const DEFAULT_OVERLAY_URL = "/default-overlay.png";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
+const QUICK_QC_CHIPS = [
+  "Subtitle safe-zone cut",
+  "Audio sync / low volume",
+  "Frame crop / framing",
+  "Low res / blur",
+  "Logo overlap",
+];
+
 function getSavedSessionUser() {
   try {
     const saved = localStorage.getItem("gyanqc_user");
@@ -46,6 +54,7 @@ export default function App() {
   const [showOverlayModal, setShowOverlayModal] = useState(false);
   const [activeOverlayUrl, setActiveOverlayUrl] = useState(DEFAULT_OVERLAY_URL);
   const [appLogoUrl, setAppLogoUrl] = useState("");
+  const [totalPendingCount, setTotalPendingCount] = useState(0);
 
   // Unified QCstar + Admin navigation history
   const [qcstarNav, setQcstarNav] = useState({
@@ -256,6 +265,23 @@ export default function App() {
       });
   }, []);
 
+  const fetchTotalPending = async (showsList) => {
+    const activeIds = (showsList || [])
+      .filter((s) => s.status !== "ended")
+      .map((s) => s.id);
+    if (activeIds.length === 0) {
+      setTotalPendingCount(0);
+      return;
+    }
+    const { count } = await supabase
+      .from("qc_episodes")
+      .select("id", { count: "exact", head: true })
+      .in("show_uuid", activeIds)
+      .neq("status", "Approved")
+      .neq("status", "Not Submitted");
+    setTotalPendingCount(count || 0);
+  };
+
   const fetchShows = async () => {
     const { data } = await supabase
       .from("qc_shows")
@@ -264,6 +290,7 @@ export default function App() {
 
     if (data) {
       setShows(data);
+      fetchTotalPending(data);
       if (data.length > 0 && !selectedShow) {
         setSelectedShow(data[0]);
       }
@@ -410,20 +437,33 @@ export default function App() {
     }
   };
 
-  const addFeedback = () => {
-    const message = comment.trim();
+  // Auto-pause video when user taps to type feedback so the frame timestamp stays locked
+  const handleFeedbackFocus = () => {
+    if (videoRef.current && !videoRef.current.paused) {
+      videoRef.current.pause();
+      setCurrentTime(videoRef.current.currentTime);
+    }
+  };
+
+  const addFeedback = (customText = null) => {
+    const raw = typeof customText === "string" ? customText : comment;
+    const message = raw.trim();
     if (!message || !videoUrl) return;
+
+    const exactTime = videoRef.current ? videoRef.current.currentTime : currentTime;
 
     setFeedbackWithHistory((previous) => [
       ...previous,
       {
         id: Date.now(),
-        time: videoRef.current ? videoRef.current.currentTime : currentTime,
+        time: exactTime,
         message,
       },
     ]);
 
-    setComment("");
+    if (typeof customText !== "string") {
+      setComment("");
+    }
   };
 
   const handleSaveDecision = async (newStatus) => {
@@ -446,6 +486,7 @@ export default function App() {
       if (selectedShow?.id) {
         fetchEpisodesForShow(selectedShow.id);
       }
+      fetchTotalPending(shows);
       alert(`Saved! Ep ${activeEpisode.episode_number} marked as "${newStatus}".`);
     }
   };
@@ -491,6 +532,17 @@ export default function App() {
     qcstarView === "creators" || qcstarView === "manage-shows"
       ? "shows"
       : qcstarView;
+
+  const openStudioClean = () => {
+    setActiveEpisode(null);
+    setVideoUrl("");
+    setVideoName("");
+    setDriveUrl("");
+    setDriveError("");
+    resetFeedbackHistory([]);
+    setStatus("Pending");
+    navigateQcstar("studio");
+  };
 
   return (
     <main className="qc-app">
@@ -564,6 +616,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={goHomeQcstar}
+                  className="desktop-only-nav"
                   style={{
                     backgroundColor: "#1e3a8a",
                     color: "#ffffff",
@@ -601,7 +654,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => navigateQcstar("admin-overview")}
-                className="secondary-button"
+                className="secondary-button desktop-only-nav"
                 style={{
                   backgroundColor: qcstarView === "admin-overview" ? "#e0e7ff" : undefined,
                   color: qcstarView === "admin-overview" ? "#1e3a8a" : undefined,
@@ -615,6 +668,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setShowAdminPanel(true)}
+                className="desktop-only-nav"
                 style={{
                   backgroundColor: "#1e3a8a",
                   color: "#ffffff",
@@ -692,15 +746,10 @@ export default function App() {
           subView={qcstarView}
           onNavigate={(nextTab) => {
             if (nextTab === "studio") {
-              setActiveEpisode(null);
-              setVideoUrl("");
-              setVideoName("");
-              setDriveUrl("");
-              setDriveError("");
-              resetFeedbackHistory([]);
-              setStatus("Pending");
+              openStudioClean();
+            } else {
+              navigateQcstar(nextTab);
             }
-            navigateQcstar(nextTab);
           }}
           shows={shows}
           currentUser={currentUser}
@@ -722,25 +771,142 @@ export default function App() {
         />
       ) : (
         <div className="qc-workspace">
-          <section className="video-column">
+          {/* LEFT / TOP COLUMN: 1. PENDING EPISODES SWITCHER -> 2. VIDEO PLAYER */}
+          <section className="video-column" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            {/* 1. PENDING EPISODES SWITCHER AT TOP OF VIDEO */}
+            {activeEpisode && selectedShow && (
+              <div className="panel" style={{ padding: "14px 16px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "10px",
+                    marginBottom: "10px",
+                  }}
+                >
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "15px", color: "#0f172a" }}>
+                      {selectedShow.show_name} — Pending Episodes ({pendingShowEpisodes.length})
+                    </h3>
+                    <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#64748b" }}>
+                      Tap an episode to switch video instantly
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fetchEpisodesForShow(selectedShow.id)}
+                    className="secondary-button"
+                    style={{ padding: "5px 10px", fontSize: "12px", flexShrink: 0 }}
+                  >
+                    ↻ Refresh
+                  </button>
+                </div>
+
+                {pendingShowEpisodes.length === 0 ? (
+                  <p style={{ fontSize: "13px", color: "#15803d", margin: 0, fontWeight: "600" }}>
+                    ✓ All submitted episodes for {selectedShow.show_name} have been approved!
+                  </p>
+                ) : (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      overflowX: "auto",
+                      paddingBottom: "4px",
+                    }}
+                  >
+                    {pendingShowEpisodes.map((ep) => {
+                      const isCurrent = activeEpisode?.id === ep.id;
+                      return (
+                        <button
+                          key={ep.id}
+                          type="button"
+                          onClick={() => loadEpisodeIntoPlayer(ep)}
+                          style={{
+                            flexShrink: 0,
+                            textAlign: "left",
+                            padding: "8px 12px",
+                            borderRadius: "9px",
+                            border: isCurrent ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
+                            backgroundColor: isCurrent ? "#eff6ff" : "#f8fafc",
+                            cursor: "pointer",
+                            minWidth: "155px",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px" }}>
+                            <strong style={{ fontSize: "13px", color: "#0f172a" }}>
+                              Ep {ep.episode_number}: {ep.ep_name || "Untitled"}
+                            </strong>
+                          </div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginTop: "4px" }}>
+                            <span style={{ fontSize: "11px", color: "#64748b" }}>
+                              {ep.scheduled_date || "No date"}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                fontWeight: "700",
+                                padding: "1px 6px",
+                                borderRadius: "999px",
+                                backgroundColor:
+                                  ep.status === "Changes Requested" ? "#fee2e2" : "#fef3c7",
+                                color:
+                                  ep.status === "Changes Requested" ? "#b91c1c" : "#92400e",
+                              }}
+                            >
+                              {ep.status}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 2. VIDEO PLAYER */}
             <div className="panel video-panel">
               <div className="panel-heading">
                 <div>
                   <h3>Video Review</h3>
                   <p>
                     {activeEpisode && selectedShow
-                      ? `Show: ${selectedShow.show_name} (${selectedShow.agency_name})`
+                      ? `Show: ${selectedShow.show_name} (${selectedShow.agency_name || selectedShow.creator_name || ""})`
                       : "Upload any local video or paste a Google Drive link for quick QC."}
                   </p>
                 </div>
 
-                <span
-                  className={`review-status ${status
-                    .toLowerCase()
-                    .replace(" ", "-")}`}
-                >
-                  {status}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setOverlayVisible((value) => !value)}
+                    style={{ padding: "5px 10px", fontSize: "12px" }}
+                  >
+                    {overlayVisible ? "Hide Overlay" : "Show Overlay"}
+                  </button>
+
+                  {currentUser.role === "admin" && (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => setShowOverlayModal(true)}
+                      style={{ padding: "5px 10px", fontSize: "12px" }}
+                    >
+                      Change Overlay
+                    </button>
+                  )}
+
+                  <span
+                    className={`review-status ${status
+                      .toLowerCase()
+                      .replace(" ", "-")}`}
+                  >
+                    {status}
+                  </span>
+                </div>
               </div>
 
               <input
@@ -888,96 +1054,13 @@ export default function App() {
             </div>
           </section>
 
+          {/* RIGHT / IMMEDIATELY BELOW VIDEO ON MOBILE: QC FEEDBACK BOX */}
           <section className="right-column">
-            {activeEpisode && selectedShow && (
-              <div className="panel">
-                <div className="panel-heading" style={{ marginBottom: "10px" }}>
-                  <div>
-                    <h3>{selectedShow.show_name} — Pending Episodes (Latest First)</h3>
-                    <p>Switch between pending episodes in this Show.</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => fetchEpisodesForShow(selectedShow.id)}
-                    className="secondary-button"
-                    style={{ padding: "5px 10px", fontSize: "12px" }}
-                  >
-                    ↻ Refresh
-                  </button>
-                </div>
-
-                {pendingShowEpisodes.length === 0 ? (
-                  <p style={{ fontSize: "13px", color: "#15803d", margin: 0, fontWeight: "600" }}>
-                    ✓ All submitted episodes for {selectedShow.show_name} have been approved!
-                  </p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "190px", overflowY: "auto" }}>
-                    {pendingShowEpisodes.map((ep) => (
-                      <div
-                        key={ep.id}
-                        onClick={() => loadEpisodeIntoPlayer(ep)}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "9px 12px",
-                          borderRadius: "8px",
-                          border: activeEpisode?.id === ep.id ? "2px solid #1e3a8a" : "1px solid #e2e8f0",
-                          backgroundColor: activeEpisode?.id === ep.id ? "#eff6ff" : "#f8fafc",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div>
-                          <strong style={{ fontSize: "13px", display: "block", color: "#0f172a" }}>
-                            Ep {ep.episode_number}: {ep.ep_name || "Untitled"}
-                          </strong>
-                          <span style={{ fontSize: "11px", color: "#64748b" }}>
-                            {ep.scheduled_date ? `Scheduled: ${ep.scheduled_date}` : "No date set"}
-                          </span>
-                        </div>
-                        <span className={`review-status ${ep.status.toLowerCase().replace(" ", "-")}`}>
-                          {ep.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="panel overlay-panel">
-              <div className="panel-heading" style={{ marginBottom: 0 }}>
-                <div>
-                  <h3>Reference Image Overlay</h3>
-                  <p>9:16 safe-zone reference active.</p>
-                </div>
-
-                <div style={{ display: "flex", gap: "8px" }}>
-                  {currentUser.role === "admin" && (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => setShowOverlayModal(true)}
-                    >
-                      Change Image
-                    </button>
-                  )}
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => setOverlayVisible((value) => !value)}
-                  >
-                    {overlayVisible ? "Hide Overlay" : "Show Overlay"}
-                  </button>
-                </div>
-              </div>
-            </div>
-
             <div className="panel feedback-panel">
               <div className="panel-heading">
                 <div>
                   <h3>QC Feedback</h3>
-                  <p>Timestamp-based review comments.</p>
+                  <p>Video auto-pauses when typing so your timestamp stays exact.</p>
                 </div>
 
                 <span className="feedback-count">{feedback.length}</span>
@@ -989,20 +1072,47 @@ export default function App() {
                   <strong>{formatTime(currentTime)}</strong>
                 </div>
 
+                {/* One-Tap Quick QC Issue Chips */}
+                {videoUrl && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                    {QUICK_QC_CHIPS.map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => addFeedback(chip)}
+                        style={{
+                          backgroundColor: "#f1f5f9",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: "999px",
+                          padding: "4px 10px",
+                          fontSize: "11px",
+                          fontWeight: "600",
+                          color: "#1e293b",
+                          cursor: "pointer",
+                        }}
+                      >
+                        + {chip}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <textarea
                   value={comment}
+                  onFocus={handleFeedbackFocus}
                   onChange={(e) => setComment(e.target.value)}
                   placeholder="Describe what needs to be corrected..."
-                  rows="3"
+                  rows="2"
+                  style={{ fontSize: "16px" }}
                 />
 
                 <button
                   className="primary-button add-feedback-button"
                   type="button"
-                  onClick={addFeedback}
+                  onClick={() => addFeedback()}
                   disabled={!videoUrl || !comment.trim()}
                 >
-                  + Add Feedback at Current Time
+                  + Add Feedback at {formatTime(currentTime)}
                 </button>
               </div>
 
@@ -1026,7 +1136,7 @@ export default function App() {
                 <div className="empty-feedback">
                   <div className="empty-icon">◌</div>
                   <strong>No feedback yet.</strong>
-                  <span>Your review comments will appear here.</span>
+                  <span>Tap a quick chip above or type a comment at the current timestamp.</span>
                 </div>
               ) : (
                 <div className="feedback-list">
@@ -1083,6 +1193,72 @@ export default function App() {
             </div>
           </section>
         </div>
+      )}
+
+      {/* FIXED BOTTOM NAVIGATION FOR QCSTAR & ADMIN ON MOBILE */}
+      {isStaff && (
+        <nav className="mobile-bottom-nav" aria-label="Workspace navigation">
+          <button
+            type="button"
+            onClick={goHomeQcstar}
+            className={`mobile-bottom-btn ${qcstarView === "home" ? "active" : ""}`}
+          >
+            <span className="mobile-bottom-icon">🏠</span>
+            <span className="mobile-bottom-label">Home</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigateQcstar("calendar")}
+            className={`mobile-bottom-btn ${qcstarView === "calendar" ? "active" : ""}`}
+          >
+            <span className="mobile-bottom-icon">📅</span>
+            <span className="mobile-bottom-label">Calendar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigateQcstar("shows")}
+            className={`mobile-bottom-btn ${portalActiveTab === "shows" ? "active" : ""}`}
+          >
+            {totalPendingCount > 0 && (
+              <span className="mobile-bottom-badge">{totalPendingCount}</span>
+            )}
+            <span className="mobile-bottom-icon">🎬</span>
+            <span className="mobile-bottom-label">Shows</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={openStudioClean}
+            className={`mobile-bottom-btn ${qcstarView === "studio" ? "active" : ""}`}
+          >
+            <span className="mobile-bottom-icon">▶️</span>
+            <span className="mobile-bottom-label">Studio</span>
+          </button>
+
+          {currentUser.role === "admin" && (
+            <>
+              <button
+                type="button"
+                onClick={() => navigateQcstar("admin-overview")}
+                className={`mobile-bottom-btn ${qcstarView === "admin-overview" ? "active" : ""}`}
+              >
+                <span className="mobile-bottom-icon">📊</span>
+                <span className="mobile-bottom-label">Overview</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowAdminPanel(true)}
+                className={`mobile-bottom-btn ${showAdminPanel ? "active" : ""}`}
+              >
+                <span className="mobile-bottom-icon">👥</span>
+                <span className="mobile-bottom-label">Team</span>
+              </button>
+            </>
+          )}
+        </nav>
       )}
 
       <footer className="app-footer">

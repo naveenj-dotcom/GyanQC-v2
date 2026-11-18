@@ -50,6 +50,9 @@ export default function QcstarPortal({
   onOpenMonthlyPlanner,
   currentUser,
 }) {
+  // Pending (unseen/unapproved) video counts mapped by show_uuid
+  const [pendingCountsByShow, setPendingCountsByShow] = useState({});
+
   // Tab 1: Full Monthly Master Calendar (All Active Shows)
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -114,6 +117,30 @@ export default function QcstarPortal({
 
   const activeShows = sortedShows.filter((s) => s.status !== 'ended');
 
+  // Fetch count of pending/unseen videos per active show
+  const fetchPendingCounts = async () => {
+    const activeIds = activeShows.map((s) => s.id);
+    if (activeIds.length === 0) {
+      setPendingCountsByShow({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('qc_episodes')
+      .select('show_uuid, status')
+      .in('show_uuid', activeIds)
+      .neq('status', 'Approved')
+      .neq('status', 'Not Submitted');
+
+    if (!error && Array.isArray(data)) {
+      const counts = {};
+      for (const row of data) {
+        counts[row.show_uuid] = (counts[row.show_uuid] || 0) + 1;
+      }
+      setPendingCountsByShow(counts);
+    }
+  };
+
   const fetchCreators = async () => {
     setLoadingCreators(true);
     const { data } = await supabase
@@ -123,6 +150,10 @@ export default function QcstarPortal({
     if (data) setCreatorsList(data);
     setLoadingCreators(false);
   };
+
+  useEffect(() => {
+    fetchPendingCounts();
+  }, [shows, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'shows') {
@@ -185,8 +216,13 @@ export default function QcstarPortal({
       .neq('status', 'Not Submitted');
 
     if (!error && data) {
-      setPendingVideos(sortLatestFirst(data.filter((ep) => ep.status !== 'Approved')));
+      const pendingList = sortLatestFirst(data.filter((ep) => ep.status !== 'Approved'));
+      setPendingVideos(pendingList);
       setApprovedShowVideos(sortLatestFirst(data.filter((ep) => ep.status === 'Approved')));
+      setPendingCountsByShow((prev) => ({
+        ...prev,
+        [showObj.id]: pendingList.length,
+      }));
     } else {
       setPendingVideos([]);
       setApprovedShowVideos([]);
@@ -456,6 +492,11 @@ export default function QcstarPortal({
     onShowCreated(createdShow);
   };
 
+  const totalPendingAcrossShows = Object.values(pendingCountsByShow).reduce(
+    (sum, count) => sum + count,
+    0
+  );
+
   // HOME SCREEN: Clean 3-Tab Launcher
   if (activeTab === 'home') {
     return (
@@ -482,8 +523,16 @@ export default function QcstarPortal({
           <button
             type="button"
             onClick={() => onNavigate('shows')}
-            style={styles.homeCard}
+            style={{ ...styles.homeCard, position: 'relative' }}
           >
+            {totalPendingAcrossShows > 0 && (
+              <span
+                title={`${totalPendingAcrossShows} videos pending QC`}
+                style={styles.homePendingBadge}
+              >
+                {totalPendingAcrossShows}
+              </span>
+            )}
             <span style={styles.tabNumber}>2</span>
             <strong style={styles.tabTitle}>Shows ({activeShows.length})</strong>
           </button>
@@ -774,6 +823,14 @@ export default function QcstarPortal({
       );
     });
 
+    // Put shows with pending/unseen videos first so QCstar immediately spots them
+    const prioritizedActiveShows = [...activeShows].sort((a, b) => {
+      const pA = pendingCountsByShow[a.id] || 0;
+      const pB = pendingCountsByShow[b.id] || 0;
+      if (pB !== pA) return pB - pA;
+      return 0;
+    });
+
     return (
       <div style={{ maxWidth: '1060px', margin: '0 auto', padding: '20px' }}>
         {subView === 'creators' ? (
@@ -913,7 +970,7 @@ export default function QcstarPortal({
             )}
           </div>
         ) : subView === 'manage-shows' ? (
-          /* MANAGE SHOWS PAGE (List of all Shows, Edit Show Name, Edit Creator ID, End/Reopen Show, + Create New Show) */
+          /* MANAGE SHOWS PAGE */
           <div className="panel">
             <div className="panel-heading">
               <div>
@@ -1062,7 +1119,7 @@ export default function QcstarPortal({
             )}
           </div>
         ) : !selectedShowForQueue ? (
-          /* CLEAN ACTIVE SHOWS PAGE (Only Active Shows, Creator Name, Pending QC, Approved Drive Links) */
+          /* ACTIVE SHOWS PAGE WITH RED PENDING VIDEO COUNT BADGE ON SHOW TABS */
           <div className="panel">
             <div className="panel-heading">
               <div>
@@ -1110,47 +1167,86 @@ export default function QcstarPortal({
               </div>
             ) : (
               <div style={styles.showsListGrid}>
-                {activeShows.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSelectShowForQueue(s, 'pending')}
-                    style={styles.showCard}
-                  >
-                    <h4 style={{ margin: '0 0 6px', fontSize: '18px', color: '#0f172a' }}>
-                      {s.show_name}
-                    </h4>
-                    <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748b' }}>
-                      Creator: <strong>{s.creator_name || 'Unassigned'}</strong>
-                    </p>
+                {prioritizedActiveShows.map((s) => {
+                  const pendingCount = pendingCountsByShow[s.id] || 0;
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>
-                        Pending QC →
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectShowForQueue(s, 'approved');
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => handleSelectShowForQueue(s, 'pending')}
+                      style={{
+                        ...styles.showCard,
+                        borderColor: pendingCount > 0 ? '#fca5a5' : '#e2e8f0',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          gap: '8px',
+                          marginBottom: '6px',
                         }}
-                        style={styles.cardApprovedPillBtn}
                       >
-                        ✓ Approved Drive Links
-                      </button>
+                        <h4 style={{ margin: 0, fontSize: '18px', color: '#0f172a' }}>
+                          {s.show_name}
+                        </h4>
+
+                        {pendingCount > 0 && (
+                          <span
+                            title={`${pendingCount} video${pendingCount === 1 ? '' : 's'} pending QC`}
+                            style={styles.redPendingCountBadge}
+                          >
+                            {pendingCount}
+                          </span>
+                        )}
+                      </div>
+
+                      <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748b' }}>
+                        Creator: <strong>{s.creator_name || 'Unassigned'}</strong>
+                      </p>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontSize: '13px',
+                            color: '#2563eb',
+                            fontWeight: '700',
+                          }}
+                        >
+                          Pending QC →
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectShowForQueue(s, 'approved');
+                          }}
+                          style={styles.cardApprovedPillBtn}
+                        >
+                          ✓ Approved Drive Links
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
         ) : (
-          /* SHOW QUEUE DRILLDOWN (PENDING QC & APPROVED DRIVE LINKS — No End Show button here) */
+          /* SHOW QUEUE DRILLDOWN (PENDING QC & APPROVED DRIVE LINKS) */
           <div className="panel">
             <div className="panel-heading">
               <div>
                 <button
                   type="button"
-                  onClick={() => setSelectedShowForQueue(null)}
+                  onClick={() => {
+                    setSelectedShowForQueue(null);
+                    fetchPendingCounts();
+                  }}
                   className="secondary-button"
                   style={{ marginBottom: '10px', padding: '5px 10px', fontSize: '12px' }}
                 >
@@ -1726,6 +1822,23 @@ const styles = {
     boxShadow: '0 4px 12px rgba(15, 23, 42, 0.05)',
     transition: 'all 0.15s ease',
   },
+  homePendingBadge: {
+    position: 'absolute',
+    top: '14px',
+    right: '14px',
+    minWidth: '24px',
+    height: '24px',
+    padding: '0 7px',
+    borderRadius: '999px',
+    backgroundColor: '#dc2626',
+    color: '#ffffff',
+    fontSize: '12px',
+    fontWeight: '800',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 6px rgba(220, 38, 38, 0.35)',
+  },
   tabNumber: {
     width: '40px',
     height: '40px',
@@ -1905,6 +2018,22 @@ const styles = {
     border: '1.5px solid #e2e8f0',
     backgroundColor: '#f8fafc',
     cursor: 'pointer',
+    transition: 'all 0.15s ease',
+  },
+  redPendingCountBadge: {
+    minWidth: '22px',
+    height: '22px',
+    padding: '0 6px',
+    borderRadius: '999px',
+    backgroundColor: '#dc2626',
+    color: '#ffffff',
+    fontSize: '12px',
+    fontWeight: '800',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    boxShadow: '0 2px 5px rgba(220, 38, 38, 0.3)',
   },
   showIdTag: {
     backgroundColor: '#e0e7ff',

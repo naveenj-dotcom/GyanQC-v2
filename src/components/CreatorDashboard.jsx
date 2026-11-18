@@ -8,7 +8,7 @@ const DEFAULT_OVERLAY_URL = '/default-overlay.png';
 export default function CreatorDashboard({ currentUser, show: initialShow, overlayUrl }) {
   const activeOverlay = overlayUrl || DEFAULT_OVERLAY_URL;
 
-  // Track mobile viewport (< 768px) for clean touch-friendly stacking
+  // Track mobile viewport (< 768px) for clean touch-friendly stacking & bottom nav
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
@@ -22,7 +22,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
   // Home view launcher: 'home' | 'calendar' | 'shows' | 'player' | 'reports'
   const [activeView, setActiveView] = useState('home');
 
-  // All active shows assigned to this Show ID (POC phone number) — latest show first
+  // All active shows assigned to this Show ID — latest show first
   const [activeShows, setActiveShows] = useState(() => {
     const raw =
       Array.isArray(currentUser?.shows) && currentUser.shows.length > 0
@@ -122,7 +122,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
     }
   };
 
-  // Load episodes for the currently selected show (highest episode number at top so no scrolling for 100+ eps)
+  // Load episodes for the currently selected show (highest episode number at top)
   const loadEpisodes = async (targetShow = selectedShow) => {
     if (!targetShow?.id) return;
     setLoadingEpisodes(true);
@@ -407,6 +407,13 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
     );
   };
 
+  const handleManualRefresh = () => {
+    refreshActiveShows();
+    if (selectedShow) loadEpisodes(selectedShow);
+    loadAllShowEpisodes(activeShows);
+    loadCalendar(activeShows);
+  };
+
   // Monthly calendar grid computation
   const [yearStr, monthStr] = selectedMonth.split('-');
   const yearNum = Number(yearStr);
@@ -439,394 +446,1197 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
     fontSize: isMobile ? '16px' : '14px',
   };
 
+  // Fixed Bottom Navigation Bar for Mobile (Home, Calendar, Shows, Player, Reports)
+  const mobileBottomNav = (
+    <nav className="mobile-bottom-nav" aria-label="Creator navigation">
+      <button
+        type="button"
+        onClick={() => setActiveView('home')}
+        className={`mobile-bottom-btn ${activeView === 'home' ? 'active' : ''}`}
+      >
+        <span className="mobile-bottom-icon">🏠</span>
+        <span className="mobile-bottom-label">Home</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setActiveView('calendar')}
+        className={`mobile-bottom-btn ${activeView === 'calendar' ? 'active' : ''}`}
+      >
+        <span className="mobile-bottom-icon">📅</span>
+        <span className="mobile-bottom-label">Calendar</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setActiveView('shows')}
+        className={`mobile-bottom-btn ${activeView === 'shows' ? 'active' : ''}`}
+      >
+        <span className="mobile-bottom-icon">🎬</span>
+        <span className="mobile-bottom-label">Shows ({activeShows.length})</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setActiveView('player')}
+        className={`mobile-bottom-btn ${activeView === 'player' ? 'active' : ''}`}
+      >
+        <span className="mobile-bottom-icon">▶️</span>
+        <span className="mobile-bottom-label">Player</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => {
+          setActiveView('reports');
+          loadAllShowEpisodes(activeShows);
+          loadCalendar(activeShows);
+        }}
+        className={`mobile-bottom-btn ${activeView === 'reports' ? 'active' : ''}`}
+      >
+        <span className="mobile-bottom-icon">📊</span>
+        <span className="mobile-bottom-label">Reports</span>
+      </button>
+    </nav>
+  );
+
   // =========================================================================
   // HOME LAUNCHER SCREEN (1. Calendar | 2. Active Shows | 3. Player | 4. Reports)
   // =========================================================================
   if (activeView === 'home') {
     return (
-      <div
-        style={{
-          maxWidth: '1040px',
-          margin: isMobile ? '20px auto' : '44px auto',
-          padding: isMobile ? '0 14px' : '0 20px',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
-          <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
-        </div>
-
-        <div style={{ textAlign: 'center', marginBottom: isMobile ? '22px' : '32px' }}>
-          <span style={styles.showBadge}>
-            SHOW ID: {currentUser?.show_id || selectedShow?.show_id} · {activeShows.length} ACTIVE{' '}
-            {activeShows.length === 1 ? 'SHOW' : 'SHOWS'}
-          </span>
-          <h1
-            style={{
-              margin: '12px 0 6px',
-              fontSize: isMobile ? '22px' : '28px',
-              color: '#0f172a',
-            }}
-          >
-            Welcome, {currentUser?.full_name || selectedShow?.creator_name}
-          </h1>
-          <p style={{ margin: 0, fontSize: isMobile ? '14px' : '15px', color: '#64748b' }}>
-            Select a workspace option below
-          </p>
-        </div>
-
+      <>
         <div
           style={{
-            ...styles.homeGrid,
-            gap: isMobile ? '12px' : '20px',
+            maxWidth: '1040px',
+            margin: isMobile ? '20px auto' : '44px auto',
+            padding: isMobile ? '0 14px' : '0 20px',
           }}
         >
-          {/* 1. Calendar */}
-          <button
-            type="button"
-            onClick={() => setActiveView('calendar')}
-            style={{
-              ...styles.homeCard,
-              padding: isMobile ? '22px 16px' : '34px 22px',
-            }}
-          >
-            <span style={styles.tabNumber}>1</span>
-            <strong style={styles.tabTitle}>Calendar</strong>
-            <span style={styles.tabSub}>
-              View scheduled episode dates &amp; monthly delivery targets
-            </span>
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
+          </div>
 
-          {/* 2. Active Shows & Submissions */}
-          <button
-            type="button"
-            onClick={() => setActiveView('shows')}
-            style={{
-              ...styles.homeCard,
-              padding: isMobile ? '22px 16px' : '34px 22px',
-            }}
-          >
-            <span style={styles.tabNumber}>2</span>
-            <strong style={styles.tabTitle}>Active Shows</strong>
-            <span style={styles.tabSub}>
-              Submit episodes, check QC status &amp; jump to feedback timestamps
+          <div style={{ textAlign: 'center', marginBottom: isMobile ? '22px' : '32px' }}>
+            <span style={styles.showBadge}>
+              SHOW ID: {currentUser?.show_id || selectedShow?.show_id} · {activeShows.length} ACTIVE{' '}
+              {activeShows.length === 1 ? 'SHOW' : 'SHOWS'}
             </span>
-          </button>
+            <h1
+              style={{
+                margin: '12px 0 6px',
+                fontSize: isMobile ? '22px' : '28px',
+                color: '#0f172a',
+              }}
+            >
+              Welcome, {currentUser?.full_name || selectedShow?.creator_name}
+            </h1>
+            <p style={{ margin: 0, fontSize: isMobile ? '14px' : '15px', color: '#64748b' }}>
+              Select a workspace option below
+            </p>
+          </div>
 
-          {/* 3. Reference Video Player */}
-          <button
-            type="button"
-            onClick={() => setActiveView('player')}
+          <div
             style={{
-              ...styles.homeCard,
-              padding: isMobile ? '22px 16px' : '34px 22px',
+              ...styles.homeGrid,
+              gap: isMobile ? '12px' : '20px',
             }}
           >
-            <span style={styles.tabNumber}>3</span>
-            <strong style={styles.tabTitle}>QC Reference Player</strong>
-            <span style={styles.tabSub}>
-              Preview Drive or local videos with the official 9:16 safe-zone overlay
-            </span>
-          </button>
+            {/* 1. Calendar */}
+            <button
+              type="button"
+              onClick={() => setActiveView('calendar')}
+              style={{
+                ...styles.homeCard,
+                padding: isMobile ? '22px 16px' : '34px 22px',
+              }}
+            >
+              <span style={styles.tabNumber}>1</span>
+              <strong style={styles.tabTitle}>Calendar</strong>
+              <span style={styles.tabSub}>
+                View scheduled episode dates &amp; monthly delivery targets
+              </span>
+            </button>
 
-          {/* 4. Monthly Reports */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveView('reports');
-              loadAllShowEpisodes(activeShows);
-              loadCalendar(activeShows);
-            }}
-            style={{
-              ...styles.homeCard,
-              padding: isMobile ? '22px 16px' : '34px 22px',
-            }}
-          >
-            <span style={{ ...styles.tabNumber, backgroundColor: '#15803d' }}>4</span>
-            <strong style={styles.tabTitle}>Reports</strong>
-            <span style={styles.tabSub}>
-              Monthly approved video counts by show &amp; upcoming calendar schedule
-            </span>
-          </button>
+            {/* 2. Active Shows & Submissions */}
+            <button
+              type="button"
+              onClick={() => setActiveView('shows')}
+              style={{
+                ...styles.homeCard,
+                padding: isMobile ? '22px 16px' : '34px 22px',
+              }}
+            >
+              <span style={styles.tabNumber}>2</span>
+              <strong style={styles.tabTitle}>Active Shows</strong>
+              <span style={styles.tabSub}>
+                Submit episodes, check QC status &amp; jump to feedback timestamps
+              </span>
+            </button>
+
+            {/* 3. Reference Video Player */}
+            <button
+              type="button"
+              onClick={() => setActiveView('player')}
+              style={{
+                ...styles.homeCard,
+                padding: isMobile ? '22px 16px' : '34px 22px',
+              }}
+            >
+              <span style={styles.tabNumber}>3</span>
+              <strong style={styles.tabTitle}>QC Reference Player</strong>
+              <span style={styles.tabSub}>
+                Preview Drive or local videos with the official 9:16 safe-zone overlay
+              </span>
+            </button>
+
+            {/* 4. Monthly Reports */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveView('reports');
+                loadAllShowEpisodes(activeShows);
+                loadCalendar(activeShows);
+              }}
+              style={{
+                ...styles.homeCard,
+                padding: isMobile ? '22px 16px' : '34px 22px',
+              }}
+            >
+              <span style={{ ...styles.tabNumber, backgroundColor: '#15803d' }}>4</span>
+              <strong style={styles.tabTitle}>Reports</strong>
+              <span style={styles.tabSub}>
+                Monthly approved video counts by show &amp; upcoming calendar schedule
+              </span>
+            </button>
+          </div>
         </div>
-      </div>
+
+        {mobileBottomNav}
+      </>
     );
   }
 
   return (
-    <div
-      style={{
-        maxWidth: '1240px',
-        margin: '0 auto',
-        padding: isMobile ? '12px' : '20px',
-      }}
-    >
-      {/* Top Navigation Bar when inside any tab */}
+    <>
       <div
         style={{
-          ...styles.topSubNav,
-          flexDirection: isMobile ? 'column' : 'row',
-          alignItems: isMobile ? 'stretch' : 'center',
-          padding: isMobile ? '10px' : '10px 14px',
+          maxWidth: '1240px',
+          margin: '0 auto',
+          padding: isMobile ? '12px' : '20px',
         }}
       >
+        {/* Top Utility Bar (Desktop Nav + Mobile Bell & Refresh) */}
         <div
           style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '8px',
+            ...styles.topSubNav,
+            padding: isMobile ? '8px 12px' : '10px 14px',
+            justifyContent: isMobile ? 'flex-end' : 'space-between',
           }}
         >
           <button
             type="button"
             onClick={() => setActiveView('home')}
+            className="desktop-only-nav"
             style={styles.homeBackBtn}
           >
             🏠 Home
           </button>
 
-          {isMobile && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
-              <button
-                type="button"
-                onClick={() => {
-                  refreshActiveShows();
-                  if (selectedShow) loadEpisodes(selectedShow);
-                  loadAllShowEpisodes(activeShows);
-                  loadCalendar(activeShows);
-                }}
-                className="secondary-button"
-                style={{ padding: '7px 12px', fontSize: '13px' }}
-              >
-                ↻ Refresh
-              </button>
-            </div>
-          )}
-        </div>
+          <div className="desktop-only-nav" style={styles.navPillGroup}>
+            <button
+              type="button"
+              onClick={() => setActiveView('calendar')}
+              style={activeView === 'calendar' ? styles.navPillActive : styles.navPill}
+            >
+              1. Calendar
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('shows')}
+              style={activeView === 'shows' ? styles.navPillActive : styles.navPill}
+            >
+              2. Shows ({activeShows.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('player')}
+              style={activeView === 'player' ? styles.navPillActive : styles.navPill}
+            >
+              3. Player
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveView('reports');
+                loadAllShowEpisodes(activeShows);
+                loadCalendar(activeShows);
+              }}
+              style={activeView === 'reports' ? styles.navPillActive : styles.navPill}
+            >
+              4. Reports
+            </button>
+          </div>
 
-        <div
-          style={{
-            ...styles.navPillGroup,
-            display: isMobile ? 'grid' : 'flex',
-            gridTemplateColumns: isMobile ? '1fr 1fr' : undefined,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setActiveView('calendar')}
-            style={activeView === 'calendar' ? styles.navPillActive : styles.navPill}
-          >
-            1. Calendar
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('shows')}
-            style={activeView === 'shows' ? styles.navPillActive : styles.navPill}
-          >
-            2. Shows ({activeShows.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveView('player')}
-            style={activeView === 'player' ? styles.navPillActive : styles.navPill}
-          >
-            3. Player
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActiveView('reports');
-              loadAllShowEpisodes(activeShows);
-              loadCalendar(activeShows);
-            }}
-            style={activeView === 'reports' ? styles.navPillActive : styles.navPill}
-          >
-            4. Reports
-          </button>
-        </div>
-
-        {!isMobile && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
             <button
               type="button"
-              onClick={() => {
-                refreshActiveShows();
-                if (selectedShow) loadEpisodes(selectedShow);
-                loadAllShowEpisodes(activeShows);
-                loadCalendar(activeShows);
-              }}
+              onClick={handleManualRefresh}
               className="secondary-button"
               style={{ padding: '7px 12px', fontSize: '13px' }}
             >
               ↻ Refresh
             </button>
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* ===================================================================== */}
-      {/* OPTION 1: MONTHLY CALENDAR                                            */}
-      {/* ===================================================================== */}
-      {activeView === 'calendar' && (
-        <div className="panel" style={{ marginTop: '14px', padding: isMobile ? '14px' : undefined }}>
-          <div className="panel-heading">
-            <div>
-              <h3>Monthly Show Calendar — {monthLabel}</h3>
-              <p>
-                Delivery schedule across your {activeShows.length} active{' '}
-                {activeShows.length === 1 ? 'show' : 'shows'}.
-              </p>
+        {/* ===================================================================== */}
+        {/* OPTION 1: MONTHLY CALENDAR                                            */}
+        {/* ===================================================================== */}
+        {activeView === 'calendar' && (
+          <div className="panel" style={{ marginTop: '14px', padding: isMobile ? '14px' : undefined }}>
+            <div className="panel-heading">
+              <div>
+                <h3>Monthly Show Calendar — {monthLabel}</h3>
+                <p>
+                  Delivery schedule across your {activeShows.length} active{' '}
+                  {activeShows.length === 1 ? 'show' : 'shows'}.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
+                  Select Month:
+                </label>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  style={{ ...responsiveInputStyle, width: isMobile ? '100%' : '175px' }}
+                />
+              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <label style={{ fontSize: '13px', fontWeight: '600', color: '#475569' }}>
-                Select Month:
-              </label>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                style={{ ...responsiveInputStyle, width: isMobile ? '100%' : '175px' }}
-              />
-            </div>
-          </div>
+            {loadingCalendar ? (
+              <p style={{ color: '#64748b' }}>Loading monthly calendar...</p>
+            ) : (
+              <>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: isMobile ? '640px' : 'auto' }}>
+                    <div style={styles.weekHeaderGrid}>
+                      {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
+                        <div key={d} style={styles.weekDayHeader}>
+                          {d}
+                        </div>
+                      ))}
+                    </div>
 
-          {loadingCalendar ? (
-            <p style={{ color: '#64748b' }}>Loading monthly calendar...</p>
-          ) : (
-            <>
-              <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: isMobile ? '640px' : 'auto' }}>
-                  <div style={styles.weekHeaderGrid}>
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                      <div key={d} style={styles.weekDayHeader}>
-                        {d}
-                      </div>
-                    ))}
+                    <div style={styles.calendarGrid}>
+                      {calendarCells.map((cell) =>
+                        cell.empty ? (
+                          <div key={cell.key} style={styles.emptyCalendarCell} />
+                        ) : (
+                          <div
+                            key={cell.key}
+                            style={{
+                              ...styles.calendarCell,
+                              backgroundColor: cell.items.length > 0 ? '#eff6ff' : '#ffffff',
+                              borderColor: cell.items.length > 0 ? '#93c5fd' : '#e2e8f0',
+                            }}
+                          >
+                            <span style={styles.dayNumber}>{cell.day}</span>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
+                              {cell.items.map((item) => {
+                                const showObj = activeShows.find((s) => s.id === item.show_uuid);
+                                return (
+                                  <div key={item.id} style={styles.calendarEventPill}>
+                                    {activeShows.length > 1 && showObj && (
+                                      <span style={{ display: 'block', fontSize: '9px', opacity: 0.85 }}>
+                                        {showObj.show_name}
+                                      </span>
+                                    )}
+                                    <strong>{item.episode_label}</strong>
+                                    {item.notes && (
+                                      <span style={{ display: 'block', fontSize: '10px', opacity: 0.9 }}>
+                                        {item.notes}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </div>
                   </div>
+                </div>
 
-                  <div style={styles.calendarGrid}>
-                    {calendarCells.map((cell) =>
-                      cell.empty ? (
-                        <div key={cell.key} style={styles.emptyCalendarCell} />
+                {/* Actionable Deliverables: Missed (Previous Days) + Today + Tomorrow */}
+                {(() => {
+                  const now = new Date();
+                  const toIso = (d) =>
+                    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+                      d.getDate()
+                    ).padStart(2, '0')}`;
+
+                  const todayIso = toIso(now);
+                  const tmrw = new Date(now);
+                  tmrw.setDate(tmrw.getDate() + 1);
+                  const tomorrowIso = toIso(tmrw);
+
+                  const actionItems = calendarEntries
+                    .filter((e) => e.schedule_date && e.schedule_date <= tomorrowIso)
+                    .map((e) => ({
+                      ...e,
+                      tag:
+                        e.schedule_date < todayIso
+                          ? 'MISSED'
+                          : e.schedule_date === todayIso
+                          ? 'TODAY'
+                          : 'TOMORROW',
+                    }));
+
+                  return (
+                    <div style={{ marginTop: '22px' }}>
+                      <h4 style={{ margin: '0 0 10px', fontSize: '15px', color: '#0f172a' }}>
+                        Action Queue — Missed, Today &amp; Tomorrow ({actionItems.length})
+                      </h4>
+
+                      {actionItems.length === 0 ? (
+                        <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                          All caught up! Nothing missed, and no deliveries due today or tomorrow.
+                        </p>
                       ) : (
-                        <div
-                          key={cell.key}
-                          style={{
-                            ...styles.calendarCell,
-                            backgroundColor: cell.items.length > 0 ? '#eff6ff' : '#ffffff',
-                            borderColor: cell.items.length > 0 ? '#93c5fd' : '#e2e8f0',
-                          }}
-                        >
-                          <span style={styles.dayNumber}>{cell.day}</span>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '4px' }}>
-                            {cell.items.map((item) => {
-                              const showObj = activeShows.find((s) => s.id === item.show_uuid);
-                              return (
-                                <div key={item.id} style={styles.calendarEventPill}>
-                                  {activeShows.length > 1 && showObj && (
-                                    <span style={{ display: 'block', fontSize: '9px', opacity: 0.85 }}>
-                                      {showObj.show_name}
-                                    </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {actionItems.map((item) => {
+                            const showObj = activeShows.find((s) => s.id === item.show_uuid);
+                            const isMissed = item.tag === 'MISSED';
+                            const isToday = item.tag === 'TODAY';
+
+                            return (
+                              <div
+                                key={item.id}
+                                style={{
+                                  ...styles.scheduleListRow,
+                                  backgroundColor: isMissed
+                                    ? '#fef2f2'
+                                    : isToday
+                                    ? '#fffbeb'
+                                    : '#f8fafc',
+                                  borderColor: isMissed
+                                    ? '#fca5a5'
+                                    : isToday
+                                    ? '#fcd34d'
+                                    : '#e2e8f0',
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
+                                  <span
+                                    style={{
+                                      ...styles.dateTag,
+                                      backgroundColor: isMissed
+                                        ? '#dc2626'
+                                        : isToday
+                                        ? '#d97706'
+                                        : '#1e3a8a',
+                                      color: '#ffffff',
+                                    }}
+                                  >
+                                    {item.tag} · {item.schedule_date}
+                                  </span>
+                                  {showObj && (
+                                    <span style={styles.showInlineBadge}>{showObj.show_name}</span>
                                   )}
-                                  <strong>{item.episode_label}</strong>
+                                  <strong style={{ marginLeft: '4px', color: '#0f172a' }}>
+                                    {item.episode_label}
+                                  </strong>
                                   {item.notes && (
-                                    <span style={{ display: 'block', fontSize: '10px', opacity: 0.9 }}>
-                                      {item.notes}
+                                    <span style={{ fontSize: '13px', color: '#475569' }}>
+                                      — {item.notes}
                                     </span>
                                   )}
                                 </div>
-                              );
-                            })}
-                          </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (showObj) setSelectedShow(showObj);
+                                    setActiveView('shows');
+                                  }}
+                                  className="secondary-button"
+                                  style={{
+                                    padding: '7px 12px',
+                                    fontSize: '12px',
+                                    fontWeight: '700',
+                                    width: isMobile ? '100%' : 'auto',
+                                  }}
+                                >
+                                  Go to Submit →
+                                </button>
+                              </div>
+                            );
+                          })}
                         </div>
-                      )
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ===================================================================== */}
+        {/* OPTION 2: ACTIVE SHOWS & EPISODE SUBMISSIONS (LATEST AT TOP)          */}
+        {/* ===================================================================== */}
+        {activeView === 'shows' && (
+          <div style={{ marginTop: '14px' }}>
+            {/* Active Shows Switcher Cards */}
+            <div
+              className="panel"
+              style={{ marginBottom: '14px', padding: isMobile ? '14px' : undefined }}
+            >
+              <div className="panel-heading" style={{ marginBottom: '10px' }}>
+                <div>
+                  <h3 style={{ fontSize: isMobile ? '16px' : undefined }}>
+                    Your Active Shows ({activeShows.length})
+                  </h3>
+                  <p style={{ fontSize: isMobile ? '12px' : undefined }}>
+                    Select a Show to submit or update episodes.
+                  </p>
                 </div>
               </div>
 
-              {/* Actionable Deliverables: Missed (Previous Days) + Today + Tomorrow */}
-              {(() => {
-                const now = new Date();
-                const toIso = (d) =>
-                  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-                    d.getDate()
-                  ).padStart(2, '0')}`;
+              <div
+                style={{
+                  ...styles.showsSwitcherGrid,
+                  gridTemplateColumns: isMobile
+                    ? '1fr'
+                    : 'repeat(auto-fill, minmax(260px, 1fr))',
+                }}
+              >
+                {activeShows.map((s) => {
+                  const isSelected = selectedShow?.id === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setSelectedShow(s)}
+                      style={{
+                        ...styles.showSwitchCard,
+                        border: isSelected ? '2px solid #1e3a8a' : '1.5px solid #e2e8f0',
+                        backgroundColor: isSelected ? '#eff6ff' : '#f8fafc',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={styles.showBadge}>ID: {s.show_id}</span>
+                        {isSelected && (
+                          <span style={{ fontSize: '11px', fontWeight: '700', color: '#1e3a8a' }}>
+                            ● Active
+                          </span>
+                        )}
+                      </div>
+                      <strong style={{ display: 'block', fontSize: '16px', color: '#0f172a', marginTop: '8px' }}>
+                        {s.show_name}
+                      </strong>
+                      <span style={{ display: 'block', fontSize: '12px', color: '#475569', marginTop: '2px' }}>
+                        Agency: {s.agency_name} · QCstar: {s.created_by_name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-                const todayIso = toIso(now);
-                const tmrw = new Date(now);
-                tmrw.setDate(tmrw.getDate() + 1);
-                const tomorrowIso = toIso(tmrw);
+            {/* Episode Submissions List for Selected Show */}
+            {selectedShow && (
+              <div className="panel" style={{ padding: isMobile ? '14px' : undefined }}>
+                <div
+                  className="panel-heading"
+                  style={{
+                    flexDirection: isMobile ? 'column' : 'row',
+                    alignItems: isMobile ? 'stretch' : 'center',
+                    gap: '12px',
+                  }}
+                >
+                  <div>
+                    <h3 style={{ fontSize: isMobile ? '16px' : undefined }}>
+                      {selectedShow.show_name} — Episodes (Latest First)
+                    </h3>
+                    <p style={{ fontSize: isMobile ? '12px' : undefined }}>
+                      Fill Episode Name, Drive Link &amp; Scheduled Date below.
+                    </p>
+                  </div>
 
-                const actionItems = calendarEntries
-                  .filter((e) => e.schedule_date && e.schedule_date <= tomorrowIso)
-                  .map((e) => ({
-                    ...e,
-                    tag:
-                      e.schedule_date < todayIso
-                        ? 'MISSED'
-                        : e.schedule_date === todayIso
-                        ? 'TODAY'
-                        : 'TOMORROW',
-                  }));
+                  <button
+                    type="button"
+                    onClick={handleAddMoreEpisode}
+                    className="primary-button"
+                    style={{
+                      fontSize: '13px',
+                      width: isMobile ? '100%' : 'auto',
+                      height: isMobile ? '42px' : undefined,
+                    }}
+                  >
+                    + Add Next Episode (Ep{' '}
+                    {episodes.length > 0
+                      ? Math.max(...episodes.map((e) => e.episode_number)) + 1
+                      : 1}
+                    )
+                  </button>
+                </div>
 
-                return (
-                  <div style={{ marginTop: '22px' }}>
-                    <h4 style={{ margin: '0 0 10px', fontSize: '15px', color: '#0f172a' }}>
-                      Action Queue — Missed, Today &amp; Tomorrow ({actionItems.length})
-                    </h4>
+                {loadingEpisodes ? (
+                  <p style={{ color: '#64748b' }}>Loading episode slots...</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {episodes.map((ep) => {
+                      const isApproved = ep.status === 'Approved';
+                      const isChanges = ep.status === 'Changes Requested';
+                      const feedbackCount = Array.isArray(ep.feedback) ? ep.feedback.length : 0;
 
-                    {actionItems.length === 0 ? (
-                      <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-                        All caught up! Nothing missed, and no deliveries due today or tomorrow.
-                      </p>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {actionItems.map((item) => {
-                          const showObj = activeShows.find((s) => s.id === item.show_uuid);
-                          const isMissed = item.tag === 'MISSED';
-                          const isToday = item.tag === 'TODAY';
+                      return (
+                        <div
+                          key={ep.id}
+                          style={{
+                            ...styles.epCard,
+                            padding: isMobile ? '14px' : '16px',
+                            border: isApproved
+                              ? '1.5px solid #86efac'
+                              : isChanges
+                              ? '1.5px solid #fca5a5'
+                              : '1px solid #e2e8f0',
+                            backgroundColor: isApproved
+                              ? '#f0fdf4'
+                              : isChanges
+                              ? '#fef2f2'
+                              : '#f8fafc',
+                          }}
+                        >
+                          <div style={styles.epTopRow}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={styles.epNumberBadge}>Ep {ep.episode_number}</span>
+                              {isApproved && (
+                                <span style={styles.approvedCheckPill}>✓ Approved</span>
+                              )}
+                            </div>
 
-                          return (
                             <div
-                              key={item.id}
                               style={{
-                                ...styles.scheduleListRow,
-                                backgroundColor: isMissed
-                                  ? '#fef2f2'
-                                  : isToday
-                                  ? '#fffbeb'
-                                  : '#f8fafc',
-                                borderColor: isMissed
-                                  ? '#fca5a5'
-                                  : isToday
-                                  ? '#fcd34d'
-                                  : '#e2e8f0',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                flexWrap: 'wrap',
+                                width: isMobile ? '100%' : 'auto',
+                                justifyContent: isMobile ? 'space-between' : 'flex-end',
                               }}
                             >
-                              <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                                <span
-                                  style={{
-                                    ...styles.dateTag,
-                                    backgroundColor: isMissed
-                                      ? '#dc2626'
-                                      : isToday
-                                      ? '#d97706'
-                                      : '#1e3a8a',
-                                    color: '#ffffff',
-                                  }}
-                                >
-                                  {item.tag} · {item.schedule_date}
+                              {ep.reviewed_by && (
+                                <span style={{ fontSize: '12px', color: '#64748b' }}>
+                                  By <strong>{ep.reviewed_by}</strong>
                                 </span>
-                                {showObj && (
-                                  <span style={styles.showInlineBadge}>{showObj.show_name}</span>
+                              )}
+
+                              {(isChanges || feedbackCount > 0 || ep.drive_file_id) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetailsModal(ep)}
+                                  style={
+                                    isChanges || feedbackCount > 0
+                                      ? styles.detailViewBtn
+                                      : styles.previewDetailBtn
+                                  }
+                                >
+                                  {isChanges || feedbackCount > 0
+                                    ? `QC Feedback (${feedbackCount})`
+                                    : 'Preview Overlay'}
+                                </button>
+                              )}
+
+                              <span
+                                className={`review-status ${ep.status.toLowerCase().replace(' ', '-')}`}
+                                style={
+                                  ep.status === 'Not Submitted'
+                                    ? { backgroundColor: '#e2e8f0', color: '#475569' }
+                                    : isApproved
+                                    ? { backgroundColor: '#16a34a', color: '#ffffff', fontWeight: '700' }
+                                    : undefined
+                                }
+                              >
+                                {isApproved ? '✓ Approved' : ep.status}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Responsive Fields Grid: 1 full-width column on Mobile, 4 columns on Desktop */}
+                          <div
+                            style={{
+                              ...styles.fieldsGrid,
+                              gridTemplateColumns: isMobile
+                                ? '1fr'
+                                : '1.3fr 1.8fr 1fr 165px',
+                              gap: '12px',
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <label style={styles.label}>Episode Name</label>
+                              <input
+                                type="text"
+                                placeholder={`e.g. Episode ${ep.episode_number} - Title`}
+                                value={ep.ep_name || ''}
+                                onChange={(e) => handleFieldChange(ep.id, 'ep_name', e.target.value)}
+                                style={responsiveInputStyle}
+                              />
+                            </div>
+
+                            <div style={{ minWidth: 0 }}>
+                              <label style={styles.label}>Google Drive Video Link</label>
+                              <input
+                                type="url"
+                                placeholder="https://drive.google.com/file/d/..."
+                                value={ep.drive_url || ''}
+                                onChange={(e) => handleFieldChange(ep.id, 'drive_url', e.target.value)}
+                                style={responsiveInputStyle}
+                              />
+                            </div>
+
+                            <div style={{ minWidth: 0 }}>
+                              <label style={styles.label}>Scheduled Date</label>
+                              <input
+                                type="date"
+                                value={ep.scheduled_date || ''}
+                                onChange={(e) =>
+                                  handleFieldChange(ep.id, 'scheduled_date', e.target.value)
+                                }
+                                style={responsiveInputStyle}
+                              />
+                            </div>
+
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'flex-end',
+                                marginTop: isMobile ? '4px' : 0,
+                              }}
+                            >
+                              <button
+                                type="button"
+                                disabled={savingEp === ep.id}
+                                onClick={() => handleSaveEpisode(ep)}
+                                className="primary-button"
+                                style={{
+                                  width: '100%',
+                                  height: isMobile ? '44px' : '40px',
+                                  fontSize: isMobile ? '15px' : '14px',
+                                  fontWeight: '700',
+                                }}
+                              >
+                                {savingEp === ep.id
+                                  ? 'Submitting...'
+                                  : ep.status === 'Not Submitted'
+                                  ? 'Submit for QC'
+                                  : 'Update & Resubmit'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===================================================================== */}
+        {/* OPTION 3: STANDALONE QC REFERENCE PLAYER (NO FEEDBACK SECTION)        */}
+        {/* ===================================================================== */}
+        {activeView === 'player' && (
+          <div style={{ maxWidth: '880px', margin: '14px auto 0' }}>
+            <div className="panel video-panel" style={{ padding: isMobile ? '14px' : undefined }}>
+              <div className="panel-heading">
+                <div>
+                  <h3>QC Reference Video Player</h3>
+                  <p>
+                    Preview Google Drive links or local video files with the official 9:16 safe-zone overlay.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setPlayerOverlayVisible((v) => !v)}
+                    className="secondary-button"
+                    style={{ fontWeight: '600' }}
+                  >
+                    {playerOverlayVisible ? 'Hide Overlay' : 'Show Overlay'}
+                  </button>
+                  {playerVideoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlayerVideoUrl('');
+                        setPlayerVideoName('');
+                        setPlayerDriveInput('');
+                        setPlayerError('');
+                      }}
+                      className="secondary-button"
+                    >
+                      Change Video
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <input
+                ref={playerFileInputRef}
+                type="file"
+                accept="video/*"
+                hidden
+                onChange={handlePlayerLocalUpload}
+              />
+
+              <div ref={playerStageRef} className="video-stage">
+                {playerVideoUrl ? (
+                  <>
+                    <video
+                      ref={playerVideoRef}
+                      className="review-video"
+                      src={playerVideoUrl}
+                      preload="auto"
+                      controls
+                      playsInline
+                      controlsList="nofullscreen noremoteplayback"
+                      disablePictureInPicture
+                      style={{
+                        transform: 'translateZ(0)',
+                        willChange: 'transform',
+                      }}
+                      onWaiting={() => setPlayerBuffering(true)}
+                      onCanPlay={() => setPlayerBuffering(false)}
+                      onPlaying={() => setPlayerBuffering(false)}
+                      onError={() => {
+                        setPlayerBuffering(false);
+                        if (playerVideoUrl.startsWith('/api/drive-video')) {
+                          setPlayerError(
+                            "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
+                          );
+                        }
+                      }}
+                    />
+
+                    <div style={{ pointerEvents: 'none' }}>
+                      <ReferenceOverlay
+                        src={activeOverlay}
+                        visible={playerOverlayVisible}
+                        tolerance={100}
+                        opacity={80}
+                        size={100}
+                        horizontal={50}
+                        vertical={50}
+                      />
+                    </div>
+
+                    <button
+                      className="fullscreen-button"
+                      type="button"
+                      onClick={handlePlayerFullscreen}
+                      title="Fullscreen"
+                      aria-label="Enter fullscreen"
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="18"
+                        height="18"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" />
+                      </svg>
+                    </button>
+                  </>
+                ) : (
+                  <div className="video-upload-placeholder">
+                    <button
+                      className="upload-trigger-area"
+                      onClick={() => playerFileInputRef.current?.click()}
+                      type="button"
+                    >
+                      <span className="upload-icon">▶</span>
+                      <strong>Upload Local Video</strong>
+                      <span>Check safe zones &amp; framing before uploading to Drive</span>
+                      <span className="upload-format">MP4, MOV, WEBM</span>
+                    </button>
+
+                    <form className="drive-link-form" onSubmit={handlePlayerDriveLoad}>
+                      <span className="drive-divider">OR PASTE GOOGLE DRIVE LINK</span>
+                      <div className="drive-input-group">
+                        <input
+                          type="url"
+                          placeholder="https://drive.google.com/file/d/..."
+                          value={playerDriveInput}
+                          onChange={(e) => setPlayerDriveInput(e.target.value)}
+                          required
+                        />
+                        <button type="submit">Load</button>
+                      </div>
+                      {playerError && <span className="drive-error">{playerError}</span>}
+                    </form>
+                  </div>
+                )}
+              </div>
+
+              {playerError && playerVideoUrl && (
+                <p style={{ color: '#dc2626', fontSize: '13px', margin: '10px 0 0' }}>
+                  {playerError}
+                </p>
+              )}
+
+              <div className="video-information">
+                <div>
+                  <strong>{playerVideoName || 'No video loaded'}</strong>
+                  <span>
+                    {playerVideoUrl
+                      ? playerBuffering
+                        ? 'Buffering video stream...'
+                        : '9:16 QCstar reference overlay active'
+                      : 'Upload a local video or paste a Drive link above'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===================================================================== */}
+        {/* OPTION 4: MONTHLY APPROVAL & SCHEDULE REPORTS                         */}
+        {/* ===================================================================== */}
+        {activeView === 'reports' && (() => {
+          const now = new Date();
+          const currentMonthIso = `${now.getFullYear()}-${String(
+            now.getMonth() + 1
+          ).padStart(2, '0')}`;
+
+          const isFutureMonth = reportMonth > currentMonthIso;
+          const isCurrentMonth = reportMonth === currentMonthIso;
+
+          const [rYear, rMonth] = reportMonth.split('-').map(Number);
+          const rMonthLabel = new Date(rYear, rMonth - 1, 1).toLocaleString('default', {
+            month: 'long',
+            year: 'numeric',
+          });
+
+          const visibleShows =
+            reportShowFilter === 'all'
+              ? activeShows
+              : activeShows.filter((s) => s.id === reportShowFilter);
+
+          const visibleShowIds = new Set(visibleShows.map((s) => s.id));
+
+          const monthEpisodes = allShowEpisodes.filter((ep) => {
+            if (!visibleShowIds.has(ep.show_uuid)) return false;
+            const dateStr = ep.scheduled_date || (ep.updated_at || '').slice(0, 10);
+            return dateStr.startsWith(reportMonth);
+          });
+
+          const monthCalendar = calendarEntries.filter(
+            (c) =>
+              visibleShowIds.has(c.show_uuid) &&
+              (c.schedule_date || '').startsWith(reportMonth)
+          );
+
+          const approvedMonthEps = monthEpisodes.filter((e) => e.status === 'Approved');
+          const pendingMonthEps = monthEpisodes.filter(
+            (e) => e.status === 'Pending' || e.status === 'In Review'
+          );
+          const changesMonthEps = monthEpisodes.filter(
+            (e) => e.status === 'Changes Requested'
+          );
+
+          const showBreakdown = visibleShows.map((s) => {
+            const sEps = monthEpisodes.filter((e) => e.show_uuid === s.id);
+            const sCal = monthCalendar.filter((c) => c.show_uuid === s.id);
+            return {
+              show: s,
+              approvedCount: sEps.filter((e) => e.status === 'Approved').length,
+              pendingCount: sEps.filter(
+                (e) => e.status === 'Pending' || e.status === 'In Review'
+              ).length,
+              changesCount: sEps.filter((e) => e.status === 'Changes Requested').length,
+              scheduledCount: sCal.length,
+            };
+          });
+
+          const handleExportReportCsv = () => {
+            const headers = isFutureMonth
+              ? ['Month', 'Show Name', 'Show ID', 'Scheduled Date', 'Episode Label', 'Notes']
+              : [
+                  'Month',
+                  'Show Name',
+                  'Show ID',
+                  'Episode Number',
+                  'Episode Name',
+                  'Scheduled Date',
+                  'Status',
+                  'Google Drive URL',
+                ];
+
+            const rows = isFutureMonth
+              ? monthCalendar.map((item) => {
+                  const sObj = activeShows.find((s) => s.id === item.show_uuid);
+                  return [
+                    rMonthLabel,
+                    sObj?.show_name || '',
+                    sObj?.show_id || '',
+                    item.schedule_date || '',
+                    item.episode_label || '',
+                    (item.notes || '').replace(/"/g, '""'),
+                  ];
+                })
+              : approvedMonthEps.map((ep) => {
+                  const sObj = activeShows.find((s) => s.id === ep.show_uuid);
+                  return [
+                    rMonthLabel,
+                    sObj?.show_name || '',
+                    sObj?.show_id || '',
+                    `Ep ${ep.episode_number}`,
+                    (ep.ep_name || '').replace(/"/g, '""'),
+                    ep.scheduled_date || '',
+                    ep.status,
+                    ep.drive_url || '',
+                  ];
+                });
+
+            const csvContent =
+              'data:text/csv;charset=utf-8,' +
+              [headers, ...rows]
+                .map((r) => r.map((v) => `"${v}"`).join(','))
+                .join('\n');
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute(
+              'download',
+              `GyanQC_Report_${reportMonth}_${isFutureMonth ? 'Scheduled' : 'Approved'}.csv`
+            );
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          };
+
+          return (
+            <div style={{ marginTop: '14px' }}>
+              <div className="panel" style={{ padding: isMobile ? '14px' : undefined }}>
+                <div className="panel-heading">
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                      <h3 style={{ margin: 0 }}>
+                        {isFutureMonth
+                          ? `Upcoming Calendar Schedule Report — ${rMonthLabel}`
+                          : `Approved Videos Report — ${rMonthLabel}`}
+                      </h3>
+                      <span
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '999px',
+                          fontSize: '11px',
+                          fontWeight: '700',
+                          backgroundColor: isFutureMonth
+                            ? '#dbeafe'
+                            : isCurrentMonth
+                            ? '#dcfce7'
+                            : '#f1f5f9',
+                          color: isFutureMonth
+                            ? '#1e3a8a'
+                            : isCurrentMonth
+                            ? '#166534'
+                            : '#334155',
+                        }}
+                      >
+                        {isFutureMonth
+                          ? 'FUTURE SCHEDULE'
+                          : isCurrentMonth
+                          ? 'CURRENT MONTH'
+                          : 'PAST MONTH'}
+                      </span>
+                    </div>
+                    <p style={{ marginTop: '6px' }}>
+                      {isFutureMonth
+                        ? 'Showing calendar-scheduled episodes planned across your shows for upcoming months.'
+                        : 'Showing approved videos, show-by-show approval counts, and calendar targets.'}
+                    </p>
+                  </div>
+
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      flexWrap: 'wrap',
+                      width: isMobile ? '100%' : 'auto',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => shiftReportMonth(-1)}
+                      className="secondary-button"
+                      style={{ padding: '7px 11px', fontSize: '13px' }}
+                    >
+                      ← Prev
+                    </button>
+
+                    <input
+                      type="month"
+                      value={reportMonth}
+                      onChange={(e) => setReportMonth(e.target.value)}
+                      style={{
+                        ...responsiveInputStyle,
+                        width: isMobile ? '155px' : '165px',
+                        fontWeight: '600',
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => shiftReportMonth(1)}
+                      className="secondary-button"
+                      style={{ padding: '7px 11px', fontSize: '13px' }}
+                    >
+                      Next →
+                    </button>
+
+                    <select
+                      value={reportShowFilter}
+                      onChange={(e) => setReportShowFilter(e.target.value)}
+                      style={{
+                        ...responsiveInputStyle,
+                        width: isMobile ? '100%' : 'auto',
+                        minWidth: '185px',
+                      }}
+                    >
+                      <option value="all">All Active Shows ({activeShows.length})</option>
+                      {activeShows.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.show_name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={handleExportReportCsv}
+                      className="primary-button"
+                      style={{
+                        height: isMobile ? '42px' : '40px',
+                        fontSize: '13px',
+                        width: isMobile ? '100%' : 'auto',
+                      }}
+                    >
+                      ⬇ Export CSV
+                    </button>
+                  </div>
+                </div>
+
+                {loadingReports || loadingCalendar ? (
+                  <p style={{ color: '#64748b' }}>Loading report metrics...</p>
+                ) : isFutureMonth ? (
+                  <>
+                    <div style={styles.kpiGrid}>
+                      <div style={{ ...styles.kpiCard, borderColor: '#93c5fd', backgroundColor: '#eff6ff' }}>
+                        <span style={styles.kpiLabel}>Scheduled on Calendar</span>
+                        <strong style={{ ...styles.kpiValue, color: '#1e3a8a' }}>
+                          {monthCalendar.length}
+                        </strong>
+                        <span style={styles.kpiSub}>Total videos scheduled in {rMonthLabel}</span>
+                      </div>
+
+                      <div style={styles.kpiCard}>
+                        <span style={styles.kpiLabel}>Shows with Schedule</span>
+                        <strong style={styles.kpiValue}>
+                          {showBreakdown.filter((b) => b.scheduledCount > 0).length} / {visibleShows.length}
+                        </strong>
+                        <span style={styles.kpiSub}>Active shows with planned dates</span>
+                      </div>
+
+                      <div style={{ ...styles.kpiCard, borderColor: '#86efac', backgroundColor: '#f0fdf4' }}>
+                        <span style={styles.kpiLabel}>Already Approved Early</span>
+                        <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
+                          {approvedMonthEps.length}
+                        </strong>
+                        <span style={styles.kpiSub}>Submitted &amp; approved ahead of schedule</span>
+                      </div>
+                    </div>
+
+                    <h4 style={styles.reportSectionTitle}>
+                      Show-by-Show Scheduled Videos — {rMonthLabel}
+                    </h4>
+                    <div style={styles.tableWrapper}>
+                      <table style={styles.reportTable}>
+                        <thead>
+                          <tr>
+                            <th style={styles.th}>Show Name</th>
+                            <th style={styles.th}>Show ID</th>
+                            <th style={styles.thCenter}>Scheduled Videos</th>
+                            <th style={styles.thCenter}>Early Approved</th>
+                            <th style={styles.thRight}>Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {showBreakdown.map((row) => (
+                            <tr key={row.show.id}>
+                              <td style={styles.td}>
+                                <strong>{row.show.show_name}</strong>
+                              </td>
+                              <td style={styles.td}>{row.show.show_id}</td>
+                              <td style={styles.tdCenter}>
+                                <span style={styles.countBadgeBlue}>{row.scheduledCount}</span>
+                              </td>
+                              <td style={styles.tdCenter}>
+                                <span style={styles.countBadgeGreen}>{row.approvedCount}</span>
+                              </td>
+                              <td style={styles.tdRight}>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedShow(row.show);
+                                    setActiveView('shows');
+                                  }}
+                                  className="secondary-button"
+                                  style={{ padding: '4px 10px', fontSize: '12px' }}
+                                >
+                                  Submit Episodes →
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <h4 style={{ ...styles.reportSectionTitle, marginTop: '24px' }}>
+                      Scheduled Calendar Entries ({monthCalendar.length})
+                    </h4>
+                    {monthCalendar.length === 0 ? (
+                      <div style={styles.emptyReportBox}>
+                        <strong>No videos scheduled on the calendar for {rMonthLabel}.</strong>
+                        <span>Use Next → or the month picker to inspect other upcoming months.</span>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {monthCalendar.map((item) => {
+                          const sObj = activeShows.find((s) => s.id === item.show_uuid);
+                          return (
+                            <div key={item.id} style={styles.scheduleListRow}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <span style={styles.dateTag}>{item.schedule_date}</span>
+                                {sObj && (
+                                  <span style={styles.showInlineBadge}>{sObj.show_name}</span>
                                 )}
-                                <strong style={{ marginLeft: '4px', color: '#0f172a' }}>
-                                  {item.episode_label}
-                                </strong>
+                                <strong style={{ color: '#0f172a' }}>{item.episode_label}</strong>
                                 {item.notes && (
                                   <span style={{ fontSize: '13px', color: '#475569' }}>
                                     — {item.notes}
@@ -836,1213 +1646,431 @@ export default function CreatorDashboard({ currentUser, show: initialShow, overl
                               <button
                                 type="button"
                                 onClick={() => {
-                                  if (showObj) setSelectedShow(showObj);
+                                  if (sObj) setSelectedShow(sObj);
                                   setActiveView('shows');
                                 }}
                                 className="secondary-button"
                                 style={{
-                                  padding: '7px 12px',
+                                  padding: '6px 12px',
                                   fontSize: '12px',
                                   fontWeight: '700',
                                   width: isMobile ? '100%' : 'auto',
                                 }}
                               >
-                                Go to Submit →
+                                Open Show →
                               </button>
                             </div>
                           );
                         })}
                       </div>
                     )}
-                  </div>
-                );
-              })()}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* OPTION 2: ACTIVE SHOWS & EPISODE SUBMISSIONS (LATEST AT TOP)          */}
-      {/* ===================================================================== */}
-      {activeView === 'shows' && (
-        <div style={{ marginTop: '14px' }}>
-          {/* Active Shows Switcher Cards (Latest created show always first) */}
-          <div
-            className="panel"
-            style={{ marginBottom: '14px', padding: isMobile ? '14px' : undefined }}
-          >
-            <div className="panel-heading" style={{ marginBottom: '10px' }}>
-              <div>
-                <h3 style={{ fontSize: isMobile ? '16px' : undefined }}>
-                  Your Active Shows ({activeShows.length})
-                </h3>
-                <p style={{ fontSize: isMobile ? '12px' : undefined }}>
-                  Select a Show to submit or update episodes.
-                </p>
-              </div>
-            </div>
-
-            <div
-              style={{
-                ...styles.showsSwitcherGrid,
-                gridTemplateColumns: isMobile
-                  ? '1fr'
-                  : 'repeat(auto-fill, minmax(260px, 1fr))',
-              }}
-            >
-              {activeShows.map((s) => {
-                const isSelected = selectedShow?.id === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setSelectedShow(s)}
-                    style={{
-                      ...styles.showSwitchCard,
-                      border: isSelected ? '2px solid #1e3a8a' : '1.5px solid #e2e8f0',
-                      backgroundColor: isSelected ? '#eff6ff' : '#f8fafc',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={styles.showBadge}>ID: {s.show_id}</span>
-                      {isSelected && (
-                        <span style={{ fontSize: '11px', fontWeight: '700', color: '#1e3a8a' }}>
-                          ● Active
+                  </>
+                ) : (
+                  <>
+                    <div style={styles.kpiGrid}>
+                      <div style={{ ...styles.kpiCard, borderColor: '#86efac', backgroundColor: '#f0fdf4' }}>
+                        <span style={styles.kpiLabel}>Approved Videos</span>
+                        <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
+                          {approvedMonthEps.length}
+                        </strong>
+                        <span style={styles.kpiSub}>
+                          Out of {monthCalendar.length || monthEpisodes.length} scheduled in {rMonthLabel}
                         </span>
-                      )}
-                    </div>
-                    <strong style={{ display: 'block', fontSize: '16px', color: '#0f172a', marginTop: '8px' }}>
-                      {s.show_name}
-                    </strong>
-                    <span style={{ display: 'block', fontSize: '12px', color: '#475569', marginTop: '2px' }}>
-                      Agency: {s.agency_name} · QCstar: {s.created_by_name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Episode Submissions List for Selected Show (Latest Episode at Top) */}
-          {selectedShow && (
-            <div className="panel" style={{ padding: isMobile ? '14px' : undefined }}>
-              <div
-                className="panel-heading"
-                style={{
-                  flexDirection: isMobile ? 'column' : 'row',
-                  alignItems: isMobile ? 'stretch' : 'center',
-                  gap: '12px',
-                }}
-              >
-                <div>
-                  <h3 style={{ fontSize: isMobile ? '16px' : undefined }}>
-                    {selectedShow.show_name} — Episodes (Latest First)
-                  </h3>
-                  <p style={{ fontSize: isMobile ? '12px' : undefined }}>
-                    Fill Episode Name, Drive Link &amp; Scheduled Date below.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleAddMoreEpisode}
-                  className="primary-button"
-                  style={{
-                    fontSize: '13px',
-                    width: isMobile ? '100%' : 'auto',
-                    height: isMobile ? '42px' : undefined,
-                  }}
-                >
-                  + Add Next Episode (Ep{' '}
-                  {episodes.length > 0
-                    ? Math.max(...episodes.map((e) => e.episode_number)) + 1
-                    : 1}
-                  )
-                </button>
-              </div>
-
-              {loadingEpisodes ? (
-                <p style={{ color: '#64748b' }}>Loading episode slots...</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  {episodes.map((ep) => {
-                    const isApproved = ep.status === 'Approved';
-                    const isChanges = ep.status === 'Changes Requested';
-                    const feedbackCount = Array.isArray(ep.feedback) ? ep.feedback.length : 0;
-
-                    return (
-                      <div
-                        key={ep.id}
-                        style={{
-                          ...styles.epCard,
-                          padding: isMobile ? '14px' : '16px',
-                          border: isApproved
-                            ? '1.5px solid #86efac'
-                            : isChanges
-                            ? '1.5px solid #fca5a5'
-                            : '1px solid #e2e8f0',
-                          backgroundColor: isApproved
-                            ? '#f0fdf4'
-                            : isChanges
-                            ? '#fef2f2'
-                            : '#f8fafc',
-                        }}
-                      >
-                        <div style={styles.epTopRow}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={styles.epNumberBadge}>Ep {ep.episode_number}</span>
-                            {isApproved && (
-                              <span style={styles.approvedCheckPill}>✓ Approved</span>
-                            )}
-                          </div>
-
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '8px',
-                              flexWrap: 'wrap',
-                              width: isMobile ? '100%' : 'auto',
-                              justifyContent: isMobile ? 'space-between' : 'flex-end',
-                            }}
-                          >
-                            {ep.reviewed_by && (
-                              <span style={{ fontSize: '12px', color: '#64748b' }}>
-                                By <strong>{ep.reviewed_by}</strong>
-                              </span>
-                            )}
-
-                            {(isChanges || feedbackCount > 0 || ep.drive_file_id) && (
-                              <button
-                                type="button"
-                                onClick={() => openDetailsModal(ep)}
-                                style={
-                                  isChanges || feedbackCount > 0
-                                    ? styles.detailViewBtn
-                                    : styles.previewDetailBtn
-                                }
-                              >
-                                {isChanges || feedbackCount > 0
-                                  ? `QC Feedback (${feedbackCount})`
-                                  : 'Preview Overlay'}
-                              </button>
-                            )}
-
-                            <span
-                              className={`review-status ${ep.status.toLowerCase().replace(' ', '-')}`}
-                              style={
-                                ep.status === 'Not Submitted'
-                                  ? { backgroundColor: '#e2e8f0', color: '#475569' }
-                                  : isApproved
-                                  ? { backgroundColor: '#16a34a', color: '#ffffff', fontWeight: '700' }
-                                  : undefined
-                              }
-                            >
-                              {isApproved ? '✓ Approved' : ep.status}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* Responsive Fields Grid: 1 full-width column on Mobile, 4 columns on Desktop */}
-                        <div
-                          style={{
-                            ...styles.fieldsGrid,
-                            gridTemplateColumns: isMobile
-                              ? '1fr'
-                              : '1.3fr 1.8fr 1fr 165px',
-                            gap: isMobile ? '12px' : '12px',
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <label style={styles.label}>Episode Name</label>
-                            <input
-                              type="text"
-                              placeholder={`e.g. Episode ${ep.episode_number} - Title`}
-                              value={ep.ep_name || ''}
-                              onChange={(e) => handleFieldChange(ep.id, 'ep_name', e.target.value)}
-                              style={responsiveInputStyle}
-                            />
-                          </div>
-
-                          <div style={{ minWidth: 0 }}>
-                            <label style={styles.label}>Google Drive Video Link</label>
-                            <input
-                              type="url"
-                              placeholder="https://drive.google.com/file/d/..."
-                              value={ep.drive_url || ''}
-                              onChange={(e) => handleFieldChange(ep.id, 'drive_url', e.target.value)}
-                              style={responsiveInputStyle}
-                            />
-                          </div>
-
-                          <div style={{ minWidth: 0 }}>
-                            <label style={styles.label}>Scheduled Date</label>
-                            <input
-                              type="date"
-                              value={ep.scheduled_date || ''}
-                              onChange={(e) =>
-                                handleFieldChange(ep.id, 'scheduled_date', e.target.value)
-                              }
-                              style={responsiveInputStyle}
-                            />
-                          </div>
-
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'flex-end',
-                              marginTop: isMobile ? '4px' : 0,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              disabled={savingEp === ep.id}
-                              onClick={() => handleSaveEpisode(ep)}
-                              className="primary-button"
-                              style={{
-                                width: '100%',
-                                height: isMobile ? '44px' : '40px',
-                                fontSize: isMobile ? '15px' : '14px',
-                                fontWeight: '700',
-                              }}
-                            >
-                              {savingEp === ep.id
-                                ? 'Submitting...'
-                                : ep.status === 'Not Submitted'
-                                ? 'Submit for QC'
-                                : 'Update & Resubmit'}
-                            </button>
-                          </div>
-                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* ===================================================================== */}
-      {/* OPTION 3: STANDALONE QC REFERENCE PLAYER (NO FEEDBACK SECTION)        */}
-      {/* ===================================================================== */}
-      {activeView === 'player' && (
-        <div style={{ maxWidth: '880px', margin: '14px auto 0' }}>
-          <div className="panel video-panel" style={{ padding: isMobile ? '14px' : undefined }}>
-            <div className="panel-heading">
-              <div>
-                <h3>QC Reference Video Player</h3>
-                <p>
-                  Preview Google Drive links or local video files with the official 9:16 safe-zone overlay.
-                </p>
-              </div>
+                      <div style={styles.kpiCard}>
+                        <span style={styles.kpiLabel}>Calendar Scheduled</span>
+                        <strong style={styles.kpiValue}>{monthCalendar.length}</strong>
+                        <span style={styles.kpiSub}>Target episodes on calendar</span>
+                      </div>
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => setPlayerOverlayVisible((v) => !v)}
-                  className="secondary-button"
-                  style={{ fontWeight: '600' }}
-                >
-                  {playerOverlayVisible ? 'Hide Overlay' : 'Show Overlay'}
-                </button>
-                {playerVideoUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPlayerVideoUrl('');
-                      setPlayerVideoName('');
-                      setPlayerDriveInput('');
-                      setPlayerError('');
-                    }}
-                    className="secondary-button"
-                  >
-                    Change Video
-                  </button>
-                )}
-              </div>
-            </div>
+                      <div style={{ ...styles.kpiCard, borderColor: '#fde68a', backgroundColor: '#fffbeb' }}>
+                        <span style={styles.kpiLabel}>Pending QC</span>
+                        <strong style={{ ...styles.kpiValue, color: '#b45309' }}>
+                          {pendingMonthEps.length}
+                        </strong>
+                        <span style={styles.kpiSub}>Awaiting QCstar review</span>
+                      </div>
 
-            <input
-              ref={playerFileInputRef}
-              type="file"
-              accept="video/*"
-              hidden
-              onChange={handlePlayerLocalUpload}
-            />
-
-            <div ref={playerStageRef} className="video-stage">
-              {playerVideoUrl ? (
-                <>
-                  <video
-                    ref={playerVideoRef}
-                    className="review-video"
-                    src={playerVideoUrl}
-                    preload="auto"
-                    controls
-                    playsInline
-                    controlsList="nofullscreen noremoteplayback"
-                    disablePictureInPicture
-                    style={{
-                      transform: 'translateZ(0)',
-                      willChange: 'transform',
-                    }}
-                    onWaiting={() => setPlayerBuffering(true)}
-                    onCanPlay={() => setPlayerBuffering(false)}
-                    onPlaying={() => setPlayerBuffering(false)}
-                    onError={() => {
-                      setPlayerBuffering(false);
-                      if (playerVideoUrl.startsWith('/api/drive-video')) {
-                        setPlayerError(
-                          "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
-                        );
-                      }
-                    }}
-                  />
-
-                  <div style={{ pointerEvents: 'none' }}>
-                    <ReferenceOverlay
-                      src={activeOverlay}
-                      visible={playerOverlayVisible}
-                      tolerance={100}
-                      opacity={80}
-                      size={100}
-                      horizontal={50}
-                      vertical={50}
-                    />
-                  </div>
-
-                  <button
-                    className="fullscreen-button"
-                    type="button"
-                    onClick={handlePlayerFullscreen}
-                    title="Fullscreen"
-                    aria-label="Enter fullscreen"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="18"
-                      height="18"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" />
-                    </svg>
-                  </button>
-                </>
-              ) : (
-                <div className="video-upload-placeholder">
-                  <button
-                    className="upload-trigger-area"
-                    onClick={() => playerFileInputRef.current?.click()}
-                    type="button"
-                  >
-                    <span className="upload-icon">▶</span>
-                    <strong>Upload Local Video</strong>
-                    <span>Check safe zones &amp; framing before uploading to Drive</span>
-                    <span className="upload-format">MP4, MOV, WEBM</span>
-                  </button>
-
-                  <form className="drive-link-form" onSubmit={handlePlayerDriveLoad}>
-                    <span className="drive-divider">OR PASTE GOOGLE DRIVE LINK</span>
-                    <div className="drive-input-group">
-                      <input
-                        type="url"
-                        placeholder="https://drive.google.com/file/d/..."
-                        value={playerDriveInput}
-                        onChange={(e) => setPlayerDriveInput(e.target.value)}
-                        required
-                      />
-                      <button type="submit">Load</button>
-                    </div>
-                    {playerError && <span className="drive-error">{playerError}</span>}
-                  </form>
-                </div>
-              )}
-            </div>
-
-            {playerError && playerVideoUrl && (
-              <p style={{ color: '#dc2626', fontSize: '13px', margin: '10px 0 0' }}>
-                {playerError}
-              </p>
-            )}
-
-            <div className="video-information">
-              <div>
-                <strong>{playerVideoName || 'No video loaded'}</strong>
-                <span>
-                  {playerVideoUrl
-                    ? playerBuffering
-                      ? 'Buffering video stream...'
-                      : '9:16 QCstar reference overlay active'
-                    : 'Upload a local video or paste a Drive link above'}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ===================================================================== */}
-      {/* OPTION 4: MONTHLY APPROVAL & SCHEDULE REPORTS                         */}
-      {/* ===================================================================== */}
-      {activeView === 'reports' && (() => {
-        const now = new Date();
-        const currentMonthIso = `${now.getFullYear()}-${String(
-          now.getMonth() + 1
-        ).padStart(2, '0')}`;
-
-        const isFutureMonth = reportMonth > currentMonthIso;
-        const isCurrentMonth = reportMonth === currentMonthIso;
-
-        const [rYear, rMonth] = reportMonth.split('-').map(Number);
-        const rMonthLabel = new Date(rYear, rMonth - 1, 1).toLocaleString('default', {
-          month: 'long',
-          year: 'numeric',
-        });
-
-        const visibleShows =
-          reportShowFilter === 'all'
-            ? activeShows
-            : activeShows.filter((s) => s.id === reportShowFilter);
-
-        const visibleShowIds = new Set(visibleShows.map((s) => s.id));
-
-        const monthEpisodes = allShowEpisodes.filter((ep) => {
-          if (!visibleShowIds.has(ep.show_uuid)) return false;
-          const dateStr = ep.scheduled_date || (ep.updated_at || '').slice(0, 10);
-          return dateStr.startsWith(reportMonth);
-        });
-
-        const monthCalendar = calendarEntries.filter(
-          (c) =>
-            visibleShowIds.has(c.show_uuid) &&
-            (c.schedule_date || '').startsWith(reportMonth)
-        );
-
-        const approvedMonthEps = monthEpisodes.filter((e) => e.status === 'Approved');
-        const pendingMonthEps = monthEpisodes.filter(
-          (e) => e.status === 'Pending' || e.status === 'In Review'
-        );
-        const changesMonthEps = monthEpisodes.filter(
-          (e) => e.status === 'Changes Requested'
-        );
-
-        const showBreakdown = visibleShows.map((s) => {
-          const sEps = monthEpisodes.filter((e) => e.show_uuid === s.id);
-          const sCal = monthCalendar.filter((c) => c.show_uuid === s.id);
-          return {
-            show: s,
-            approvedCount: sEps.filter((e) => e.status === 'Approved').length,
-            pendingCount: sEps.filter(
-              (e) => e.status === 'Pending' || e.status === 'In Review'
-            ).length,
-            changesCount: sEps.filter((e) => e.status === 'Changes Requested').length,
-            scheduledCount: sCal.length,
-          };
-        });
-
-        const handleExportReportCsv = () => {
-          const headers = isFutureMonth
-            ? ['Month', 'Show Name', 'Show ID', 'Scheduled Date', 'Episode Label', 'Notes']
-            : [
-                'Month',
-                'Show Name',
-                'Show ID',
-                'Episode Number',
-                'Episode Name',
-                'Scheduled Date',
-                'Status',
-                'Google Drive URL',
-              ];
-
-          const rows = isFutureMonth
-            ? monthCalendar.map((item) => {
-                const sObj = activeShows.find((s) => s.id === item.show_uuid);
-                return [
-                  rMonthLabel,
-                  sObj?.show_name || '',
-                  sObj?.show_id || '',
-                  item.schedule_date || '',
-                  item.episode_label || '',
-                  (item.notes || '').replace(/"/g, '""'),
-                ];
-              })
-            : approvedMonthEps.map((ep) => {
-                const sObj = activeShows.find((s) => s.id === ep.show_uuid);
-                return [
-                  rMonthLabel,
-                  sObj?.show_name || '',
-                  sObj?.show_id || '',
-                  `Ep ${ep.episode_number}`,
-                  (ep.ep_name || '').replace(/"/g, '""'),
-                  ep.scheduled_date || '',
-                  ep.status,
-                  ep.drive_url || '',
-                ];
-              });
-
-          const csvContent =
-            'data:text/csv;charset=utf-8,' +
-            [headers, ...rows]
-              .map((r) => r.map((v) => `"${v}"`).join(','))
-              .join('\n');
-
-          const encodedUri = encodeURI(csvContent);
-          const link = document.createElement('a');
-          link.setAttribute('href', encodedUri);
-          link.setAttribute(
-            'download',
-            `GyanQC_Report_${reportMonth}_${isFutureMonth ? 'Scheduled' : 'Approved'}.csv`
-          );
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        };
-
-        return (
-          <div style={{ marginTop: '14px' }}>
-            <div className="panel" style={{ padding: isMobile ? '14px' : undefined }}>
-              <div className="panel-heading">
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                    <h3 style={{ margin: 0 }}>
-                      {isFutureMonth
-                        ? `Upcoming Calendar Schedule Report — ${rMonthLabel}`
-                        : `Approved Videos Report — ${rMonthLabel}`}
-                    </h3>
-                    <span
-                      style={{
-                        padding: '3px 10px',
-                        borderRadius: '999px',
-                        fontSize: '11px',
-                        fontWeight: '700',
-                        backgroundColor: isFutureMonth
-                          ? '#dbeafe'
-                          : isCurrentMonth
-                          ? '#dcfce7'
-                          : '#f1f5f9',
-                        color: isFutureMonth
-                          ? '#1e3a8a'
-                          : isCurrentMonth
-                          ? '#166534'
-                          : '#334155',
-                      }}
-                    >
-                      {isFutureMonth
-                        ? 'FUTURE SCHEDULE'
-                        : isCurrentMonth
-                        ? 'CURRENT MONTH'
-                        : 'PAST MONTH'}
-                    </span>
-                  </div>
-                  <p style={{ marginTop: '6px' }}>
-                    {isFutureMonth
-                      ? 'Showing calendar-scheduled episodes planned across your shows for upcoming months.'
-                      : 'Showing approved videos, show-by-show approval counts, and calendar targets.'}
-                  </p>
-                </div>
-
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    flexWrap: 'wrap',
-                    width: isMobile ? '100%' : 'auto',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => shiftReportMonth(-1)}
-                    className="secondary-button"
-                    style={{ padding: '7px 11px', fontSize: '13px' }}
-                  >
-                    ← Prev
-                  </button>
-
-                  <input
-                    type="month"
-                    value={reportMonth}
-                    onChange={(e) => setReportMonth(e.target.value)}
-                    style={{
-                      ...responsiveInputStyle,
-                      width: isMobile ? '155px' : '165px',
-                      fontWeight: '600',
-                    }}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => shiftReportMonth(1)}
-                    className="secondary-button"
-                    style={{ padding: '7px 11px', fontSize: '13px' }}
-                  >
-                    Next →
-                  </button>
-
-                  <select
-                    value={reportShowFilter}
-                    onChange={(e) => setReportShowFilter(e.target.value)}
-                    style={{
-                      ...responsiveInputStyle,
-                      width: isMobile ? '100%' : 'auto',
-                      minWidth: '185px',
-                    }}
-                  >
-                    <option value="all">All Active Shows ({activeShows.length})</option>
-                    {activeShows.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.show_name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={handleExportReportCsv}
-                    className="primary-button"
-                    style={{
-                      height: isMobile ? '42px' : '40px',
-                      fontSize: '13px',
-                      width: isMobile ? '100%' : 'auto',
-                    }}
-                  >
-                    ⬇ Export CSV
-                  </button>
-                </div>
-              </div>
-
-              {loadingReports || loadingCalendar ? (
-                <p style={{ color: '#64748b' }}>Loading report metrics...</p>
-              ) : isFutureMonth ? (
-                <>
-                  <div style={styles.kpiGrid}>
-                    <div style={{ ...styles.kpiCard, borderColor: '#93c5fd', backgroundColor: '#eff6ff' }}>
-                      <span style={styles.kpiLabel}>Scheduled on Calendar</span>
-                      <strong style={{ ...styles.kpiValue, color: '#1e3a8a' }}>
-                        {monthCalendar.length}
-                      </strong>
-                      <span style={styles.kpiSub}>Total videos scheduled in {rMonthLabel}</span>
+                      <div style={{ ...styles.kpiCard, borderColor: '#fecaca', backgroundColor: '#fef2f2' }}>
+                        <span style={styles.kpiLabel}>Changes Requested</span>
+                        <strong style={{ ...styles.kpiValue, color: '#b91c1c' }}>
+                          {changesMonthEps.length}
+                        </strong>
+                        <span style={styles.kpiSub}>Needs revision &amp; resubmit</span>
+                      </div>
                     </div>
 
-                    <div style={styles.kpiCard}>
-                      <span style={styles.kpiLabel}>Shows with Schedule</span>
-                      <strong style={styles.kpiValue}>
-                        {showBreakdown.filter((b) => b.scheduledCount > 0).length} / {visibleShows.length}
-                      </strong>
-                      <span style={styles.kpiSub}>Active shows with planned dates</span>
-                    </div>
-
-                    <div style={{ ...styles.kpiCard, borderColor: '#86efac', backgroundColor: '#f0fdf4' }}>
-                      <span style={styles.kpiLabel}>Already Approved Early</span>
-                      <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
-                        {approvedMonthEps.length}
-                      </strong>
-                      <span style={styles.kpiSub}>Submitted &amp; approved ahead of schedule</span>
-                    </div>
-                  </div>
-
-                  <h4 style={styles.reportSectionTitle}>
-                    Show-by-Show Scheduled Videos — {rMonthLabel}
-                  </h4>
-                  <div style={styles.tableWrapper}>
-                    <table style={styles.reportTable}>
-                      <thead>
-                        <tr>
-                          <th style={styles.th}>Show Name</th>
-                          <th style={styles.th}>Show ID</th>
-                          <th style={styles.thCenter}>Scheduled Videos</th>
-                          <th style={styles.thCenter}>Early Approved</th>
-                          <th style={styles.thRight}>Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {showBreakdown.map((row) => (
-                          <tr key={row.show.id}>
-                            <td style={styles.td}>
-                              <strong>{row.show.show_name}</strong>
-                            </td>
-                            <td style={styles.td}>{row.show.show_id}</td>
-                            <td style={styles.tdCenter}>
-                              <span style={styles.countBadgeBlue}>{row.scheduledCount}</span>
-                            </td>
-                            <td style={styles.tdCenter}>
-                              <span style={styles.countBadgeGreen}>{row.approvedCount}</span>
-                            </td>
-                            <td style={styles.tdRight}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedShow(row.show);
-                                  setActiveView('shows');
-                                }}
-                                className="secondary-button"
-                                style={{ padding: '4px 10px', fontSize: '12px' }}
-                              >
-                                Submit Episodes →
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <h4 style={{ ...styles.reportSectionTitle, marginTop: '24px' }}>
-                    Scheduled Calendar Entries ({monthCalendar.length})
-                  </h4>
-                  {monthCalendar.length === 0 ? (
-                    <div style={styles.emptyReportBox}>
-                      <strong>No videos scheduled on the calendar for {rMonthLabel}.</strong>
-                      <span>Use Next → or the month picker to inspect other upcoming months.</span>
-                    </div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {monthCalendar.map((item) => {
-                        const sObj = activeShows.find((s) => s.id === item.show_uuid);
-                        return (
-                          <div key={item.id} style={styles.scheduleListRow}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <span style={styles.dateTag}>{item.schedule_date}</span>
-                              {sObj && (
-                                <span style={styles.showInlineBadge}>{sObj.show_name}</span>
-                              )}
-                              <strong style={{ color: '#0f172a' }}>{item.episode_label}</strong>
-                              {item.notes && (
-                                <span style={{ fontSize: '13px', color: '#475569' }}>
-                                  — {item.notes}
-                                </span>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (sObj) setSelectedShow(sObj);
-                                setActiveView('shows');
-                              }}
-                              className="secondary-button"
-                              style={{
-                                padding: '6px 12px',
-                                fontSize: '12px',
-                                fontWeight: '700',
-                                width: isMobile ? '100%' : 'auto',
-                              }}
-                            >
-                              Open Show →
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </>
-              ) : (
-                <>
-                  <div style={styles.kpiGrid}>
-                    <div style={{ ...styles.kpiCard, borderColor: '#86efac', backgroundColor: '#f0fdf4' }}>
-                      <span style={styles.kpiLabel}>Approved Videos</span>
-                      <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
-                        {approvedMonthEps.length}
-                      </strong>
-                      <span style={styles.kpiSub}>
-                        Out of {monthCalendar.length || monthEpisodes.length} scheduled in {rMonthLabel}
-                      </span>
-                    </div>
-
-                    <div style={styles.kpiCard}>
-                      <span style={styles.kpiLabel}>Calendar Scheduled</span>
-                      <strong style={styles.kpiValue}>{monthCalendar.length}</strong>
-                      <span style={styles.kpiSub}>Target episodes on calendar</span>
-                    </div>
-
-                    <div style={{ ...styles.kpiCard, borderColor: '#fde68a', backgroundColor: '#fffbeb' }}>
-                      <span style={styles.kpiLabel}>Pending QC</span>
-                      <strong style={{ ...styles.kpiValue, color: '#b45309' }}>
-                        {pendingMonthEps.length}
-                      </strong>
-                      <span style={styles.kpiSub}>Awaiting QCstar review</span>
-                    </div>
-
-                    <div style={{ ...styles.kpiCard, borderColor: '#fecaca', backgroundColor: '#fef2f2' }}>
-                      <span style={styles.kpiLabel}>Changes Requested</span>
-                      <strong style={{ ...styles.kpiValue, color: '#b91c1c' }}>
-                        {changesMonthEps.length}
-                      </strong>
-                      <span style={styles.kpiSub}>Needs revision &amp; resubmit</span>
-                    </div>
-                  </div>
-
-                  <h4 style={styles.reportSectionTitle}>
-                    Show-by-Show Breakdown — {rMonthLabel}
-                  </h4>
-                  <div style={styles.tableWrapper}>
-                    <table style={styles.reportTable}>
-                      <thead>
-                        <tr>
-                          <th style={styles.th}>Show Name</th>
-                          <th style={styles.th}>Show ID</th>
-                          <th style={styles.thCenter}>Approved</th>
-                          <th style={styles.thCenter}>Pending QC</th>
-                          <th style={styles.thCenter}>Changes Req.</th>
-                          <th style={styles.thCenter}>Calendar Target</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {showBreakdown.map((row) => (
-                          <tr key={row.show.id}>
-                            <td style={styles.td}>
-                              <strong>{row.show.show_name}</strong>
-                            </td>
-                            <td style={styles.td}>{row.show.show_id}</td>
-                            <td style={styles.tdCenter}>
-                              <span style={styles.countBadgeGreen}>{row.approvedCount}</span>
-                            </td>
-                            <td style={styles.tdCenter}>
-                              <span style={styles.countBadgeAmber}>{row.pendingCount}</span>
-                            </td>
-                            <td style={styles.tdCenter}>
-                              <span style={styles.countBadgeRed}>{row.changesCount}</span>
-                            </td>
-                            <td style={styles.tdCenter}>
-                              <span style={styles.countBadgeBlue}>{row.scheduledCount}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <h4 style={{ ...styles.reportSectionTitle, marginTop: '24px' }}>
-                    Approved Videos List ({approvedMonthEps.length})
-                  </h4>
-                  {approvedMonthEps.length === 0 ? (
-                    <div style={styles.emptyReportBox}>
-                      <strong>No approved videos recorded for {rMonthLabel}.</strong>
-                      <span>Use ← Prev / Next → above to check other months, or submit episodes in Active Shows.</span>
-                    </div>
-                  ) : (
+                    <h4 style={styles.reportSectionTitle}>
+                      Show-by-Show Breakdown — {rMonthLabel}
+                    </h4>
                     <div style={styles.tableWrapper}>
                       <table style={styles.reportTable}>
                         <thead>
                           <tr>
                             <th style={styles.th}>Show Name</th>
-                            <th style={styles.th}>Episode</th>
-                            <th style={styles.th}>Episode Title</th>
-                            <th style={styles.th}>Scheduled Date</th>
-                            <th style={styles.th}>Status</th>
-                            <th style={styles.thRight}>Video Link</th>
+                            <th style={styles.th}>Show ID</th>
+                            <th style={styles.thCenter}>Approved</th>
+                            <th style={styles.thCenter}>Pending QC</th>
+                            <th style={styles.thCenter}>Changes Req.</th>
+                            <th style={styles.thCenter}>Calendar Target</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {approvedMonthEps.map((ep) => {
-                            const sObj = activeShows.find((s) => s.id === ep.show_uuid);
-                            return (
-                              <tr key={ep.id}>
-                                <td style={styles.td}>
-                                  <span style={styles.showInlineBadge}>
-                                    {sObj?.show_name || 'Show'}
-                                  </span>
-                                </td>
-                                <td style={styles.td}>
-                                  <strong>Ep {ep.episode_number}</strong>
-                                </td>
-                                <td style={styles.td}>
-                                  {ep.ep_name || `Episode ${ep.episode_number}`}
-                                </td>
-                                <td style={styles.td}>{ep.scheduled_date || '—'}</td>
-                                <td style={styles.td}>
-                                  <span style={styles.approvedCheckPill}>✓ Approved</span>
-                                </td>
-                                <td style={styles.tdRight}>
-                                  {ep.drive_url ? (
-                                    <a
-                                      href={ep.drive_url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      style={{
-                                        color: '#1e3a8a',
-                                        fontWeight: '700',
-                                        fontSize: '12px',
-                                        textDecoration: 'none',
-                                      }}
-                                    >
-                                      Open Drive ↗
-                                    </a>
-                                  ) : (
-                                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>—</span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
+                          {showBreakdown.map((row) => (
+                            <tr key={row.show.id}>
+                              <td style={styles.td}>
+                                <strong>{row.show.show_name}</strong>
+                              </td>
+                              <td style={styles.td}>{row.show.show_id}</td>
+                              <td style={styles.tdCenter}>
+                                <span style={styles.countBadgeGreen}>{row.approvedCount}</span>
+                              </td>
+                              <td style={styles.tdCenter}>
+                                <span style={styles.countBadgeAmber}>{row.pendingCount}</span>
+                              </td>
+                              <td style={styles.tdCenter}>
+                                <span style={styles.countBadgeRed}>{row.changesCount}</span>
+                              </td>
+                              <td style={styles.tdCenter}>
+                                <span style={styles.countBadgeBlue}>{row.scheduledCount}</span>
+                              </td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        );
-      })()}
 
-      {/* ===================================================================== */}
-      {/* QC DETAILS MODAL WITH INTEGRATED PLAYER + CLICKABLE TIMESTAMPS        */}
-      {/* ===================================================================== */}
-      {selectedDetailEp && (
-        <div
-          style={{
-            ...modalStyles.overlay,
-            padding: isMobile ? '10px' : '20px',
-          }}
-          onClick={() => setSelectedDetailEp(null)}
-        >
-          <div
-            style={{
-              ...modalStyles.wideCard,
-              padding: isMobile ? '14px' : '24px',
-              maxHeight: isMobile ? '94vh' : '90vh',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={modalStyles.header}>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-                  <span style={styles.epNumberBadge}>Ep {selectedDetailEp.episode_number}</span>
-                  <span
-                    className={`review-status ${selectedDetailEp.status
-                      .toLowerCase()
-                      .replace(' ', '-')}`}
-                  >
-                    {selectedDetailEp.status === 'Approved'
-                      ? '✓ Approved'
-                      : selectedDetailEp.status}
-                  </span>
-                </div>
-                <h3 style={{ margin: '4px 0 0', fontSize: isMobile ? '16px' : '18px', color: '#0f172a' }}>
-                  {selectedDetailEp.ep_name || `Episode ${selectedDetailEp.episode_number}`}
-                </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                  Scheduled: <strong>{selectedDetailEp.scheduled_date || 'Not set'}</strong> · Reviewed by:{' '}
-                  <strong>{selectedDetailEp.reviewed_by || 'QCstar'}</strong>
-                </p>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => setModalOverlayVisible((v) => !v)}
-                  className="secondary-button"
-                  style={{ padding: '6px 10px', fontSize: '12px' }}
-                >
-                  {modalOverlayVisible ? 'Hide Overlay' : 'Show Overlay'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedDetailEp(null)}
-                  style={modalStyles.closeBtn}
-                >
-                  ✕ Close
-                </button>
-              </div>
-            </div>
-
-            <div
-              style={{
-                ...modalStyles.splitBody,
-                gridTemplateColumns: isMobile
-                  ? '1fr'
-                  : 'repeat(auto-fit, minmax(340px, 1fr))',
-              }}
-            >
-              <div>
-                <div
-                  ref={modalStageRef}
-                  className="video-stage"
-                  style={{ minHeight: isMobile ? '240px' : '340px' }}
-                >
-                  {selectedDetailEp.drive_file_id ? (
-                    <>
-                      <video
-                        ref={modalVideoRef}
-                        className="review-video"
-                        src={`/api/drive-video?id=${selectedDetailEp.drive_file_id}`}
-                        preload="auto"
-                        controls
-                        playsInline
-                        controlsList="nofullscreen noremoteplayback"
-                        disablePictureInPicture
-                        style={{
-                          transform: 'translateZ(0)',
-                          willChange: 'transform',
-                        }}
-                        onError={() =>
-                          setModalVideoError(
-                            "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
-                          )
-                        }
-                      />
-
-                      <div style={{ pointerEvents: 'none' }}>
-                        <ReferenceOverlay
-                          src={activeOverlay}
-                          visible={modalOverlayVisible}
-                          tolerance={100}
-                          opacity={80}
-                          size={100}
-                          horizontal={50}
-                          vertical={50}
-                        />
+                    <h4 style={{ ...styles.reportSectionTitle, marginTop: '24px' }}>
+                      Approved Videos List ({approvedMonthEps.length})
+                    </h4>
+                    {approvedMonthEps.length === 0 ? (
+                      <div style={styles.emptyReportBox}>
+                        <strong>No approved videos recorded for {rMonthLabel}.</strong>
+                        <span>Use ← Prev / Next → above to check other months, or submit episodes in Active Shows.</span>
                       </div>
-
-                      <button
-                        className="fullscreen-button"
-                        type="button"
-                        onClick={handleModalFullscreen}
-                        title="Fullscreen"
-                        aria-label="Enter fullscreen"
-                      >
-                        <svg
-                          viewBox="0 0 24 24"
-                          width="18"
-                          height="18"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                        >
-                          <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" />
-                        </svg>
-                      </button>
-                    </>
-                  ) : (
-                    <div style={{ color: '#cbd5e1', padding: '24px', textAlign: 'center' }}>
-                      No video file linked for this episode yet.
-                    </div>
-                  )}
-                </div>
-                {modalVideoError && (
-                  <p style={{ color: '#dc2626', fontSize: '12px', marginTop: '6px' }}>
-                    {modalVideoError}
-                  </p>
+                    ) : (
+                      <div style={styles.tableWrapper}>
+                        <table style={styles.reportTable}>
+                          <thead>
+                            <tr>
+                              <th style={styles.th}>Show Name</th>
+                              <th style={styles.th}>Episode</th>
+                              <th style={styles.th}>Episode Title</th>
+                              <th style={styles.th}>Scheduled Date</th>
+                              <th style={styles.th}>Status</th>
+                              <th style={styles.thRight}>Video Link</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {approvedMonthEps.map((ep) => {
+                              const sObj = activeShows.find((s) => s.id === ep.show_uuid);
+                              return (
+                                <tr key={ep.id}>
+                                  <td style={styles.td}>
+                                    <span style={styles.showInlineBadge}>
+                                      {sObj?.show_name || 'Show'}
+                                    </span>
+                                  </td>
+                                  <td style={styles.td}>
+                                    <strong>Ep {ep.episode_number}</strong>
+                                  </td>
+                                  <td style={styles.td}>
+                                    {ep.ep_name || `Episode ${ep.episode_number}`}
+                                  </td>
+                                  <td style={styles.td}>{ep.scheduled_date || '—'}</td>
+                                  <td style={styles.td}>
+                                    <span style={styles.approvedCheckPill}>✓ Approved</span>
+                                  </td>
+                                  <td style={styles.tdRight}>
+                                    {ep.drive_url ? (
+                                      <a
+                                        href={ep.drive_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{
+                                          color: '#1e3a8a',
+                                          fontWeight: '700',
+                                          fontSize: '12px',
+                                          textDecoration: 'none',
+                                        }}
+                                      >
+                                        Open Drive ↗
+                                      </a>
+                                    ) : (
+                                      <span style={{ color: '#94a3b8', fontSize: '12px' }}>—</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
+            </div>
+          );
+        })()}
 
-              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                <div style={modalStyles.notesSection}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '10px',
-                    }}
+        {/* ===================================================================== */}
+        {/* QC DETAILS MODAL WITH INTEGRATED PLAYER + CLICKABLE TIMESTAMPS        */}
+        {/* ===================================================================== */}
+        {selectedDetailEp && (
+          <div
+            style={{
+              ...modalStyles.overlay,
+              padding: isMobile ? '10px' : '20px',
+            }}
+            onClick={() => setSelectedDetailEp(null)}
+          >
+            <div
+              style={{
+                ...modalStyles.wideCard,
+                padding: isMobile ? '14px' : '24px',
+                maxHeight: isMobile ? '94vh' : '90vh',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={modalStyles.header}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                    <span style={styles.epNumberBadge}>Ep {selectedDetailEp.episode_number}</span>
+                    <span
+                      className={`review-status ${selectedDetailEp.status
+                        .toLowerCase()
+                        .replace(' ', '-')}`}
+                    >
+                      {selectedDetailEp.status === 'Approved'
+                        ? '✓ Approved'
+                        : selectedDetailEp.status}
+                    </span>
+                  </div>
+                  <h3 style={{ margin: '4px 0 0', fontSize: isMobile ? '16px' : '18px', color: '#0f172a' }}>
+                    {selectedDetailEp.ep_name || `Episode ${selectedDetailEp.episode_number}`}
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                    Scheduled: <strong>{selectedDetailEp.scheduled_date || 'Not set'}</strong> · Reviewed by:{' '}
+                    <strong>{selectedDetailEp.reviewed_by || 'QCstar'}</strong>
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => setModalOverlayVisible((v) => !v)}
+                    className="secondary-button"
+                    style={{ padding: '6px 10px', fontSize: '12px' }}
                   >
-                    <div>
-                      <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>
-                        QCstar Feedback ({(selectedDetailEp.feedback || []).length})
-                      </strong>
-                      <span style={{ fontSize: '11px', color: '#64748b' }}>
-                        Tap any timestamp to jump the video to that exact second
-                      </span>
-                    </div>
-                    {(selectedDetailEp.feedback || []).length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => handleCopyAllNotes(selectedDetailEp)}
-                        style={modalStyles.copyBtn}
-                      >
-                        {copiedNotes ? '✓ Copied!' : 'Copy All'}
-                      </button>
+                    {modalOverlayVisible ? 'Hide Overlay' : 'Show Overlay'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDetailEp(null)}
+                    style={modalStyles.closeBtn}
+                  >
+                    ✕ Close
+                  </button>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  ...modalStyles.splitBody,
+                  gridTemplateColumns: isMobile
+                    ? '1fr'
+                    : 'repeat(auto-fit, minmax(340px, 1fr))',
+                }}
+              >
+                <div>
+                  <div
+                    ref={modalStageRef}
+                    className="video-stage"
+                    style={{ minHeight: isMobile ? '240px' : '340px' }}
+                  >
+                    {selectedDetailEp.drive_file_id ? (
+                      <>
+                        <video
+                          ref={modalVideoRef}
+                          className="review-video"
+                          src={`/api/drive-video?id=${selectedDetailEp.drive_file_id}`}
+                          preload="auto"
+                          controls
+                          playsInline
+                          controlsList="nofullscreen noremoteplayback"
+                          disablePictureInPicture
+                          style={{
+                            transform: 'translateZ(0)',
+                            willChange: 'transform',
+                          }}
+                          onError={() =>
+                            setModalVideoError(
+                              "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
+                            )
+                          }
+                        />
+
+                        <div style={{ pointerEvents: 'none' }}>
+                          <ReferenceOverlay
+                            src={activeOverlay}
+                            visible={modalOverlayVisible}
+                            tolerance={100}
+                            opacity={80}
+                            size={100}
+                            horizontal={50}
+                            vertical={50}
+                          />
+                        </div>
+
+                        <button
+                          className="fullscreen-button"
+                          type="button"
+                          onClick={handleModalFullscreen}
+                          title="Fullscreen"
+                          aria-label="Enter fullscreen"
+                        >
+                          <svg
+                            viewBox="0 0 24 24"
+                            width="18"
+                            height="18"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                          >
+                            <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" />
+                          </svg>
+                        </button>
+                      </>
+                    ) : (
+                      <div style={{ color: '#cbd5e1', padding: '24px', textAlign: 'center' }}>
+                        No video file linked for this episode yet.
+                      </div>
                     )}
                   </div>
-
-                  {!selectedDetailEp.feedback || selectedDetailEp.feedback.length === 0 ? (
-                    <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-                      No timestamped notes were attached.
+                  {modalVideoError && (
+                    <p style={{ color: '#dc2626', fontSize: '12px', marginTop: '6px' }}>
+                      {modalVideoError}
                     </p>
-                  ) : (
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div style={modalStyles.notesSection}>
                     <div
                       style={{
                         display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                        maxHeight: '260px',
-                        overflowY: 'auto',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '10px',
                       }}
                     >
-                      {selectedDetailEp.feedback
-                        .slice()
-                        .sort((a, b) => a.time - b.time)
-                        .map((item, idx) => (
-                          <div key={item.id || idx} style={modalStyles.noteCard}>
-                            <button
-                              type="button"
-                              onClick={() => jumpModalVideoToTime(item.time)}
-                              title="Jump video to this timestamp"
-                              style={modalStyles.timeJumpBtn}
-                            >
-                              ▶ {formatTime(item.time)}
-                            </button>
-                            <p
-                              style={{
-                                margin: 0,
-                                fontSize: '13px',
-                                color: '#1e293b',
-                                lineHeight: 1.45,
-                              }}
-                            >
-                              {item.message}
-                            </p>
-                          </div>
-                        ))}
+                      <div>
+                        <strong style={{ fontSize: '14px', color: '#0f172a', display: 'block' }}>
+                          QCstar Feedback ({(selectedDetailEp.feedback || []).length})
+                        </strong>
+                        <span style={{ fontSize: '11px', color: '#64748b' }}>
+                          Tap any timestamp to jump the video to that exact second
+                        </span>
+                      </div>
+                      {(selectedDetailEp.feedback || []).length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyAllNotes(selectedDetailEp)}
+                          style={modalStyles.copyBtn}
+                        >
+                          {copiedNotes ? '✓ Copied!' : 'Copy All'}
+                        </button>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                <div style={modalStyles.resubmitBox}>
-                  <label style={{ ...styles.label, color: '#0f172a' }}>
-                    Submit Revised Google Drive Link (after fixing changes)
-                  </label>
-                  <div
-                    style={{
-                      display: 'flex',
-                      flexDirection: isMobile ? 'column' : 'row',
-                      gap: '8px',
-                      marginTop: '6px',
-                    }}
-                  >
-                    <input
-                      type="url"
-                      placeholder="https://drive.google.com/file/d/..."
-                      value={modalDriveUrl}
-                      onChange={(e) => setModalDriveUrl(e.target.value)}
-                      style={{ ...responsiveInputStyle, flex: 1 }}
-                    />
-                    <button
-                      type="button"
-                      disabled={savingEp === selectedDetailEp.id}
-                      onClick={() => handleSaveEpisode(selectedDetailEp, modalDriveUrl)}
-                      className="primary-button"
+                    {!selectedDetailEp.feedback || selectedDetailEp.feedback.length === 0 ? (
+                      <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                        No timestamped notes were attached.
+                      </p>
+                    ) : (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '8px',
+                          maxHeight: '260px',
+                          overflowY: 'auto',
+                        }}
+                      >
+                        {selectedDetailEp.feedback
+                          .slice()
+                          .sort((a, b) => a.time - b.time)
+                          .map((item, idx) => (
+                            <div key={item.id || idx} style={modalStyles.noteCard}>
+                              <button
+                                type="button"
+                                onClick={() => jumpModalVideoToTime(item.time)}
+                                title="Jump video to this timestamp"
+                                style={modalStyles.timeJumpBtn}
+                              >
+                                ▶ {formatTime(item.time)}
+                              </button>
+                              <p
+                                style={{
+                                  margin: 0,
+                                  fontSize: '13px',
+                                  color: '#1e293b',
+                                  lineHeight: 1.45,
+                                }}
+                              >
+                                {item.message}
+                              </p>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={modalStyles.resubmitBox}>
+                    <label style={{ ...styles.label, color: '#0f172a' }}>
+                      Submit Revised Google Drive Link (after fixing changes)
+                    </label>
+                    <div
                       style={{
-                        whiteSpace: 'nowrap',
-                        height: isMobile ? '44px' : '40px',
-                        width: isMobile ? '100%' : 'auto',
+                        display: 'flex',
+                        flexDirection: isMobile ? 'column' : 'row',
+                        gap: '8px',
+                        marginTop: '6px',
                       }}
                     >
-                      {savingEp === selectedDetailEp.id ? 'Submitting...' : 'Submit Revised Cut'}
-                    </button>
+                      <input
+                        type="url"
+                        placeholder="https://drive.google.com/file/d/..."
+                        value={modalDriveUrl}
+                        onChange={(e) => setModalDriveUrl(e.target.value)}
+                        style={{ ...responsiveInputStyle, flex: 1 }}
+                      />
+                      <button
+                        type="button"
+                        disabled={savingEp === selectedDetailEp.id}
+                        onClick={() => handleSaveEpisode(selectedDetailEp, modalDriveUrl)}
+                        className="primary-button"
+                        style={{
+                          whiteSpace: 'nowrap',
+                          height: isMobile ? '44px' : '40px',
+                          width: isMobile ? '100%' : 'auto',
+                        }}
+                      >
+                        {savingEp === selectedDetailEp.id ? 'Submitting...' : 'Submit Revised Cut'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+
+      {mobileBottomNav}
+    </>
   );
 }
 
