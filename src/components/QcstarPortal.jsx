@@ -87,7 +87,6 @@ export default function QcstarPortal({
   const [showToEnd, setShowToEnd] = useState(null);
   const [endingShow, setEndingShow] = useState(false);
   const [reopeningId, setReopeningId] = useState(null);
-  const [deletingShowId, setDeletingShowId] = useState(null);
 
   // Creators Directory View & List state
   const [creatorsList, setCreatorsList] = useState([]);
@@ -282,42 +281,6 @@ export default function QcstarPortal({
     } else {
       alert(`Show "${showObj.show_name}" is active again.`);
       if (onShowsUpdated) onShowsUpdated();
-    }
-  };
-
-  // Permanently delete an ended Show (inside Manage Shows page)
-  const handleDeleteShow = async (showObj) => {
-    if (
-      !window.confirm(
-        `Permanently delete "${showObj.show_name}" and all its episodes & calendar entries? This cannot be undone.`
-      )
-    ) {
-      return;
-    }
-    setDeletingShowId(showObj.id);
-
-    await supabase.from('qc_show_calendar').delete().eq('show_uuid', showObj.id);
-    await supabase.from('qc_episodes').delete().eq('show_uuid', showObj.id);
-
-    const { data: deletedRows, error } = await supabase
-      .from('qc_shows')
-      .delete()
-      .eq('id', showObj.id)
-      .select('id');
-
-    setDeletingShowId(null);
-    if (error) {
-      alert('Error deleting Show: ' + error.message);
-    } else if (!deletedRows || deletedRows.length === 0) {
-      alert(
-        'Could not delete show due to database permissions. Please run the DELETE policy SQL in Supabase.'
-      );
-    } else {
-      if (selectedShowForQueue?.id === showObj.id) {
-        setSelectedShowForQueue(null);
-      }
-      alert(`Show "${showObj.show_name}" has been deleted.`);
-      if (onShowsUpdated) await onShowsUpdated();
     }
   };
 
@@ -1151,24 +1114,14 @@ export default function QcstarPortal({
                           </td>
                           <td style={styles.td}>
                             {isEnded ? (
-                              <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
-                                <button
-                                  type="button"
-                                  disabled={reopeningId === s.id || deletingShowId === s.id}
-                                  onClick={() => handleReopenShow(s)}
-                                  style={styles.reopenShowBtnTable}
-                                >
-                                  {reopeningId === s.id ? 'Reopening...' : '↻ Reopen'}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={deletingShowId === s.id || reopeningId === s.id}
-                                  onClick={() => handleDeleteShow(s)}
-                                  style={styles.removeCreatorBtn}
-                                >
-                                  {deletingShowId === s.id ? 'Deleting...' : 'Delete'}
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                disabled={reopeningId === s.id}
+                                onClick={() => handleReopenShow(s)}
+                                style={styles.reopenShowBtnTable}
+                              >
+                                {reopeningId === s.id ? 'Reopening...' : '↻ Reopen'}
+                              </button>
                             ) : (
                               <button
                                 type="button"
