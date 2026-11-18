@@ -252,13 +252,14 @@ export default function App() {
     }
   };
 
+  // Fetch episodes sorted descending so newest / highest episode numbers appear at the top
   const fetchEpisodesForShow = async (showUuid) => {
     if (!showUuid) return;
     const { data } = await supabase
       .from("qc_episodes")
       .select("*")
       .eq("show_uuid", showUuid)
-      .order("episode_number", { ascending: true });
+      .order("episode_number", { ascending: false });
 
     if (data) setShowEpisodes(data);
   };
@@ -332,7 +333,7 @@ export default function App() {
       return;
     }
 
-    const initialEps = [1, 2, 3, 4, 5].map((num) => ({
+    const initialEps = [5, 4, 3, 2, 1].map((num) => ({
       show_uuid: createdShow.id,
       episode_number: num,
       ep_name: "",
@@ -514,7 +515,7 @@ export default function App() {
     (currentUser.role === "qcstar" && qcstarView === "monthly-planner") ||
     (currentUser.role === "admin" && adminView === "calendar");
 
-  // Pending episodes for the active show (used when navigated via Shows / Calendar)
+  // Pending episodes for the active show (sorted descending so newest episodes appear at top)
   const pendingShowEpisodes = showEpisodes.filter(
     (ep) => ep.status !== "Approved" && ep.status !== "Not Submitted"
   );
@@ -994,12 +995,12 @@ export default function App() {
           </section>
 
           <section className="right-column">
-            {/* Shown ONLY when navigated from Shows/Calendar: Pending Episodes in this Show */}
+            {/* Shown ONLY when navigated from Shows/Calendar: Pending Episodes in this Show (Newest First) */}
             {activeEpisode && selectedShow && (
               <div className="panel">
                 <div className="panel-heading" style={{ marginBottom: "10px" }}>
                   <div>
-                    <h3>{selectedShow.show_name} — Pending Episodes</h3>
+                    <h3>{selectedShow.show_name} — Pending Episodes (Latest First)</h3>
                     <p>Switch between pending episodes in this Show.</p>
                   </div>
                   <button

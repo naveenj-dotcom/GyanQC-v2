@@ -1,6 +1,38 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 
+// Helper to extract Drive File ID and build reliable View & Direct Download URLs
+function getDriveLinks(ep) {
+  let fileId = (ep?.drive_file_id || '').trim();
+  const rawUrl = (ep?.drive_url || '').trim();
+
+  if (!fileId && rawUrl) {
+    const match =
+      rawUrl.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+      rawUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/) ||
+      rawUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (match) fileId = match[1];
+  }
+
+  const viewUrl =
+    rawUrl || (fileId ? `https://drive.google.com/file/d/${fileId}/view` : '');
+  const downloadUrl = fileId
+    ? `https://drive.google.com/uc?export=download&id=${fileId}`
+    : rawUrl;
+
+  return { fileId, viewUrl, downloadUrl };
+}
+
+// Sort episodes so most recently submitted / re-edited appear first, then highest episode number
+function sortLatestFirst(list) {
+  return [...list].sort((a, b) => {
+    const timeA = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+    const timeB = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return (b.episode_number || 0) - (a.episode_number || 0);
+  });
+}
+
 export default function QcstarPortal({
   activeTab,
   onNavigate,
@@ -22,14 +54,22 @@ export default function QcstarPortal({
   const [allEpisodes, setAllEpisodes] = useState([]);
   const [loadingCalendar, setLoadingCalendar] = useState(false);
 
-  // Tab 2: Shows -> Pending QC Videos Drilldown state
-  const [selectedShowForQueue, setSelectedShowForQueue] = useState(null);
-  const [pendingVideos, setPendingVideos] = useState([]);
-  const [loadingQueue, setLoadingQueue] = useState(false);
+  // Calendar Approved Video Quick-Download Modal
+  const [selectedApprovedModal, setSelectedApprovedModal] = useState(null);
 
-  // End Show Confirmation Popup state
+  // Tab 2: Shows -> Active vs Ended filter + Pending QC & Approved Videos Drilldown
+  const [showsListFilter, setShowsListFilter] = useState('active'); // 'active' | 'ended'
+  const [selectedShowForQueue, setSelectedShowForQueue] = useState(null);
+  const [queueSubTab, setQueueSubTab] = useState('pending'); // 'pending' | 'approved'
+  const [pendingVideos, setPendingVideos] = useState([]);
+  const [approvedShowVideos, setApprovedShowVideos] = useState([]);
+  const [loadingQueue, setLoadingQueue] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+
+  // End / Reopen Show Confirmation Popup state
   const [showToEnd, setShowToEnd] = useState(null);
   const [endingShow, setEndingShow] = useState(false);
+  const [reopeningId, setReopeningId] = useState(null);
 
   // Create New Show Popup state (inside Shows tab)
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -39,8 +79,22 @@ export default function QcstarPortal({
   const [newShowId, setNewShowId] = useState('');
   const [creatingShow, setCreatingShow] = useState(false);
 
-  // Only show active shows in QCstar's active tabs
-  const activeShows = shows.filter((s) => s.status !== 'ended');
+  // Latest created show always appears at the top
+  const sortedShows = [...shows].sort((a, b) => {
+    const tA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return tB - tA;
+  });
+
+  const activeShows = sortedShows.filter((s) => s.status !== 'ended');
+  const endedShows = sortedShows.filter((s) => s.status === 'ended');
+
+  const handleCopyDriveLink = (url, id) => {
+    if (!url) return;
+    navigator.clipboard?.writeText(url);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const loadMasterCalendar = async () => {
     setLoadingCalendar(true);
@@ -52,7 +106,9 @@ export default function QcstarPortal({
         .order('schedule_date', { ascending: true }),
       supabase
         .from('qc_episodes')
-        .select('id, show_uuid, episode_number, ep_name, status, drive_file_id, drive_url, scheduled_date, feedback'),
+        .select(
+          'id, show_uuid, episode_number, ep_name, status, drive_file_id, drive_url, scheduled_date, feedback, updated_at'
+        ),
     ]);
 
     setAllCalendarItems(calItems || []);
@@ -74,22 +130,23 @@ export default function QcstarPortal({
     );
   };
 
-  const handleSelectShowForQueue = async (showObj) => {
+  const handleSelectShowForQueue = async (showObj, initialSubTab = 'pending') => {
     setSelectedShowForQueue(showObj);
+    setQueueSubTab(initialSubTab);
     setLoadingQueue(true);
 
     const { data, error } = await supabase
       .from('qc_episodes')
       .select('*')
       .eq('show_uuid', showObj.id)
-      .neq('status', 'Approved')
-      .neq('status', 'Not Submitted')
-      .order('episode_number', { ascending: true });
+      .neq('status', 'Not Submitted');
 
     if (!error && data) {
-      setPendingVideos(data);
+      setPendingVideos(sortLatestFirst(data.filter((ep) => ep.status !== 'Approved')));
+      setApprovedShowVideos(sortLatestFirst(data.filter((ep) => ep.status === 'Approved')));
     } else {
       setPendingVideos([]);
+      setApprovedShowVideos([]);
     }
     setLoadingQueue(false);
   };
@@ -100,18 +157,24 @@ export default function QcstarPortal({
     }
   }, [activeTab]);
 
+  // Any QCstar can end ANY active show regardless of who created it
   const handleConfirmEndShow = async () => {
     if (!showToEnd) return;
     setEndingShow(true);
 
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from('qc_shows')
       .update({ status: 'ended' })
-      .eq('id', showToEnd.id);
+      .eq('id', showToEnd.id)
+      .select('id, status');
 
     setEndingShow(false);
     if (error) {
       alert('Error ending Show: ' + error.message);
+    } else if (!updatedRows || updatedRows.length === 0) {
+      alert(
+        'Could not update show status due to database permissions. Please ensure qc_shows update policy allows all QCstars.'
+      );
     } else {
       const endedName = showToEnd.show_name;
       if (selectedShowForQueue?.id === showToEnd.id) {
@@ -119,6 +182,29 @@ export default function QcstarPortal({
       }
       setShowToEnd(null);
       alert(`Show "${endedName}" has been ended.`);
+      if (onShowEnded) onShowEnded();
+    }
+  };
+
+  // Any QCstar can also reopen an ended show if needed
+  const handleReopenShow = async (showObj) => {
+    if (!window.confirm(`Reopen "${showObj.show_name}" and restore it to Active Shows?`)) {
+      return;
+    }
+    setReopeningId(showObj.id);
+    const { data: updatedRows, error } = await supabase
+      .from('qc_shows')
+      .update({ status: 'active' })
+      .eq('id', showObj.id)
+      .select('id, status');
+
+    setReopeningId(null);
+    if (error) {
+      alert('Error reopening Show: ' + error.message);
+    } else if (!updatedRows || updatedRows.length === 0) {
+      alert('Could not reopen show due to database permissions.');
+    } else {
+      alert(`Show "${showObj.show_name}" is active again.`);
       if (onShowEnded) onShowEnded();
     }
   };
@@ -180,7 +266,7 @@ export default function QcstarPortal({
             Welcome, {currentUser.full_name}
           </h1>
           <p style={{ margin: '6px 0 0', fontSize: '15px', color: '#64748b' }}>
-            Select a workspace tab to begin
+            Select a workspace tab to begin · {activeShows.length} active shows
           </p>
         </div>
 
@@ -200,7 +286,7 @@ export default function QcstarPortal({
             style={styles.homeCard}
           >
             <span style={styles.tabNumber}>2</span>
-            <strong style={styles.tabTitle}>Shows</strong>
+            <strong style={styles.tabTitle}>Shows ({activeShows.length})</strong>
           </button>
 
           <button
@@ -270,6 +356,7 @@ export default function QcstarPortal({
               <p>
                 Full schedule across all {activeShows.length} active{' '}
                 {activeShows.length === 1 ? 'Show' : 'Shows'} ({enrichedMonthItems.length} episodes scheduled).
+                Click green approved pills to download from Google Drive.
               </p>
             </div>
 
@@ -341,30 +428,40 @@ export default function QcstarPortal({
                         {cell.items.map((item) => {
                           const canReview =
                             !item.isApproved && item.matchingEp?.drive_file_id && item.showObj;
+                          const canDownloadApproved = item.isApproved && item.matchingEp;
+
                           return (
                             <div
                               key={item.id}
                               onClick={() => {
-                                if (canReview) {
+                                if (canDownloadApproved) {
+                                  setSelectedApprovedModal({
+                                    showName: item.showName,
+                                    episode: item.matchingEp,
+                                    scheduleDate: item.schedule_date,
+                                  });
+                                } else if (canReview) {
                                   onOpenEpisodeInStudio(item.showObj, item.matchingEp);
                                 }
                               }}
                               title={
-                                canReview
+                                canDownloadApproved
+                                  ? 'Approved — Click to open or download from Google Drive'
+                                  : canReview
                                   ? 'Click to open this episode in QC Studio'
                                   : `${item.showName} — ${item.episode_label}`
                               }
                               style={{
                                 ...styles.masterEventPill,
                                 backgroundColor: item.isApproved ? '#15803d' : '#1e3a8a',
-                                cursor: canReview ? 'pointer' : 'default',
+                                cursor: canDownloadApproved || canReview ? 'pointer' : 'default',
                               }}
                             >
                               <span style={{ display: 'block', fontSize: '10px', opacity: 0.9, fontWeight: '600' }}>
                                 {item.showName}
                               </span>
                               <strong style={{ fontSize: '12px' }}>
-                                {item.episode_label} {item.isApproved ? '✓' : ''}
+                                {item.episode_label} {item.isApproved ? '✓ ⬇' : ''}
                               </strong>
                               {item.notes && (
                                 <span style={{ display: 'block', fontSize: '10px', opacity: 0.85 }}>
@@ -382,20 +479,94 @@ export default function QcstarPortal({
             </>
           )}
         </div>
+
+        {/* Approved Episode Quick-Download Modal from Calendar */}
+        {selectedApprovedModal && (() => {
+          const { viewUrl, downloadUrl } = getDriveLinks(selectedApprovedModal.episode);
+          const ep = selectedApprovedModal.episode;
+          return (
+            <div
+              style={modalStyles.overlay}
+              onClick={() => setSelectedApprovedModal(null)}
+            >
+              <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <span style={{ ...styles.showIdTag, backgroundColor: '#dcfce7', color: '#166534' }}>
+                    ✓ Approved Video
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedApprovedModal(null)}
+                    style={{ background: '#f1f5f9', border: 'none', padding: '5px 9px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <h3 style={{ margin: '0 0 4px', fontSize: '19px', color: '#0f172a' }}>
+                  {selectedApprovedModal.showName} — Ep {ep.episode_number}
+                </h3>
+                <p style={{ margin: '0 0 16px', fontSize: '13px', color: '#64748b' }}>
+                  {ep.ep_name || `Episode ${ep.episode_number}`} · Scheduled:{' '}
+                  <strong>{selectedApprovedModal.scheduleDate || ep.scheduled_date || 'N/A'}</strong>
+                </p>
+
+                {viewUrl || downloadUrl ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <a
+                      href={downloadUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ ...styles.driveDownloadBtn, justifyContent: 'center', padding: '11px 16px', fontSize: '14px' }}
+                    >
+                      ⬇ Download Video from Google Drive
+                    </a>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <a
+                        href={viewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ ...styles.driveViewBtn, flex: 1, justifyContent: 'center' }}
+                      >
+                        Open in Google Drive ↗
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyDriveLink(viewUrl, ep.id)}
+                        className="secondary-button"
+                        style={{ flex: 1 }}
+                      >
+                        {copiedId === ep.id ? '✓ Link Copied!' : 'Copy Drive Link'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ color: '#991b1b', fontSize: '13px' }}>
+                    No Google Drive link is attached to this episode yet.
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     );
   }
 
-  // TAB 2: SHOWS (includes "+ Create New Show" + End Show Confirmation Popup)
+  // TAB 2: SHOWS (Shared across all QCstars: Latest Shows first + Latest/Re-edited Episodes first)
   if (activeTab === 'shows') {
+    const displayedShows = showsListFilter === 'active' ? activeShows : endedShows;
+
     return (
       <div style={{ maxWidth: '1040px', margin: '0 auto', padding: '20px' }}>
         {!selectedShowForQueue ? (
           <div className="panel">
             <div className="panel-heading">
               <div>
-                <h3>All Active Shows</h3>
-                <p>Click on a Show to view videos awaiting QC, create a new Show, or end a completed Show.</p>
+                <h3>All Shows (Latest First)</h3>
+                <p>
+                  Every QCstar can review episodes, edit schedules, and end or reopen any show across the team.
+                </p>
               </div>
 
               <button
@@ -407,43 +578,117 @@ export default function QcstarPortal({
               </button>
             </div>
 
-            {activeShows.length === 0 ? (
+            {/* Active vs Ended Shows Toggle */}
+            <div style={styles.subTabBar}>
+              <button
+                type="button"
+                onClick={() => setShowsListFilter('active')}
+                style={
+                  showsListFilter === 'active'
+                    ? styles.subTabActive
+                    : styles.subTabInactive
+                }
+              >
+                Active Shows ({activeShows.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowsListFilter('ended')}
+                style={
+                  showsListFilter === 'ended'
+                    ? styles.subTabActiveRed
+                    : styles.subTabInactive
+                }
+              >
+                Ended Shows ({endedShows.length})
+              </button>
+            </div>
+
+            {displayedShows.length === 0 ? (
               <div style={styles.emptyBox}>
-                <strong>No active Shows found.</strong>
-                <span>Click "+ Create New Show" above to add a Show.</span>
+                <strong>
+                  {showsListFilter === 'active'
+                    ? 'No active Shows found.'
+                    : 'No ended Shows found.'}
+                </strong>
+                <span>
+                  {showsListFilter === 'active'
+                    ? 'Click "+ Create New Show" above to add a Show.'
+                    : 'Shows ended by any QCstar appear here and can be reopened anytime.'}
+                </span>
               </div>
             ) : (
               <div style={styles.showsListGrid}>
-                {activeShows.map((s) => (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSelectShowForQueue(s)}
-                    style={styles.showCard}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={styles.showIdTag}>ID: {s.show_id}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowToEnd(s);
-                        }}
-                        style={styles.endShowBtn}
-                      >
-                        End Show
-                      </button>
+                {displayedShows.map((s) => {
+                  const isEnded = s.status === 'ended';
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => handleSelectShowForQueue(s, 'pending')}
+                      style={{
+                        ...styles.showCard,
+                        backgroundColor: isEnded ? '#fef2f2' : '#f8fafc',
+                        borderColor: isEnded ? '#fecaca' : '#e2e8f0',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={styles.showIdTag}>ID: {s.show_id}</span>
+                        {isEnded ? (
+                          <button
+                            type="button"
+                            disabled={reopeningId === s.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleReopenShow(s);
+                            }}
+                            style={styles.reopenShowBtn}
+                          >
+                            {reopeningId === s.id ? 'Reopening...' : '↻ Reopen Show'}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setShowToEnd(s);
+                            }}
+                            style={styles.endShowBtn}
+                          >
+                            End Show
+                          </button>
+                        )}
+                      </div>
+
+                      <h4 style={{ margin: '10px 0 4px', fontSize: '18px', color: '#0f172a' }}>
+                        {s.show_name}
+                      </h4>
+                      <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#64748b' }}>
+                        Agency: <strong>{s.agency_name}</strong> · Creator: <strong>{s.creator_name}</strong>
+                      </p>
+                      {s.created_by_name && (
+                        <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#64748b' }}>
+                          Created by: <strong>{s.created_by_name}</strong>
+                        </p>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: '700' }}>
+                          {isEnded ? 'View Episodes →' : 'Pending QC →'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectShowForQueue(s, 'approved');
+                          }}
+                          style={styles.cardApprovedPillBtn}
+                        >
+                          ✓ Approved Drive Links
+                        </button>
+                      </div>
                     </div>
-                    <h4 style={{ margin: '10px 0 4px', fontSize: '18px', color: '#0f172a' }}>
-                      {s.show_name}
-                    </h4>
-                    <p style={{ margin: '0 0 10px', fontSize: '13px', color: '#64748b' }}>
-                      Agency: <strong>{s.agency_name}</strong> · Creator: <strong>{s.creator_name}</strong>
-                    </p>
-                    <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: '700' }}>
-                      Open Pending Videos →
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -459,56 +704,192 @@ export default function QcstarPortal({
                 >
                   ← Back to All Shows
                 </button>
-                <h3>{selectedShowForQueue.show_name} — Videos to QC</h3>
-                <p>Showing only videos awaiting QC review (approved videos are hidden).</p>
+                <h3>{selectedShowForQueue.show_name}</h3>
+                <p>
+                  Most recent &amp; re-edited videos appear at the top so you never need to scroll.
+                </p>
               </div>
 
+              {selectedShowForQueue.status === 'ended' ? (
+                <button
+                  type="button"
+                  disabled={reopeningId === selectedShowForQueue.id}
+                  onClick={() => handleReopenShow(selectedShowForQueue)}
+                  style={styles.driveDownloadBtn}
+                >
+                  {reopeningId === selectedShowForQueue.id ? 'Reopening...' : '↻ Reopen Show'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setShowToEnd(selectedShowForQueue)}
+                  style={styles.endShowBtnLarge}
+                >
+                  End Show
+                </button>
+              )}
+            </div>
+
+            {/* Sub-Tab Switcher: Pending QC vs Approved Videos */}
+            <div style={styles.subTabBar}>
               <button
                 type="button"
-                onClick={() => setShowToEnd(selectedShowForQueue)}
-                style={styles.endShowBtnLarge}
+                onClick={() => setQueueSubTab('pending')}
+                style={
+                  queueSubTab === 'pending'
+                    ? styles.subTabActive
+                    : styles.subTabInactive
+                }
               >
-                End Show
+                Pending QC ({pendingVideos.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setQueueSubTab('approved')}
+                style={
+                  queueSubTab === 'approved'
+                    ? styles.subTabActiveGreen
+                    : styles.subTabInactive
+                }
+              >
+                ✓ Approved Videos — Google Drive ({approvedShowVideos.length})
               </button>
             </div>
 
             {loadingQueue ? (
-              <p style={{ color: '#64748b' }}>Loading videos to QC...</p>
-            ) : pendingVideos.length === 0 ? (
+              <p style={{ color: '#64748b' }}>Loading episodes...</p>
+            ) : queueSubTab === 'pending' ? (
+              pendingVideos.length === 0 ? (
+                <div style={styles.emptyBox}>
+                  <strong>All caught up! No pending videos to QC for {selectedShowForQueue.show_name}.</strong>
+                  <span>New or re-edited submissions from {selectedShowForQueue.creator_name} will appear right at the top.</span>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {pendingVideos.map((ep, index) => {
+                    const isReedited = Boolean(ep.reviewed_by) && ep.status === 'Pending';
+                    return (
+                      <div
+                        key={ep.id}
+                        style={{
+                          ...styles.pendingEpRow,
+                          borderColor: index === 0 ? '#93c5fd' : '#e2e8f0',
+                          backgroundColor: index === 0 ? '#eff6ff' : '#f8fafc',
+                        }}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <span style={styles.epPill}>Ep {ep.episode_number}</span>
+                            {isReedited && (
+                              <span style={styles.reeditedBadge}>↻ RE-EDITED</span>
+                            )}
+                            {index === 0 && !isReedited && (
+                              <span style={styles.latestBadge}>LATEST</span>
+                            )}
+                            <strong style={{ fontSize: '15px', color: '#0f172a' }}>
+                              {ep.ep_name || `Episode ${ep.episode_number}`}
+                            </strong>
+                          </div>
+                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                            Scheduled Date: <strong>{ep.scheduled_date || 'Not set'}</strong>
+                            {ep.updated_at && (
+                              <>
+                                {' '}
+                                · Updated:{' '}
+                                <strong>
+                                  {new Date(ep.updated_at).toLocaleString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </strong>
+                              </>
+                            )}
+                          </p>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span className={`review-status ${ep.status.toLowerCase().replace(' ', '-')}`}>
+                            {ep.status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onOpenEpisodeInStudio(selectedShowForQueue, ep)}
+                            className="primary-button"
+                          >
+                            Open in QC Studio →
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : approvedShowVideos.length === 0 ? (
               <div style={styles.emptyBox}>
-                <strong>All caught up! No pending videos to QC for {selectedShowForQueue.show_name}.</strong>
-                <span>New submissions from {selectedShowForQueue.creator_name} will appear here automatically.</span>
+                <strong>No approved videos yet for {selectedShowForQueue.show_name}.</strong>
+                <span>Once an episode is approved in QC Studio, its Google Drive download link will appear here.</span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {pendingVideos.map((ep) => (
-                  <div key={ep.id} style={styles.pendingEpRow}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={styles.epPill}>Ep {ep.episode_number}</span>
-                        <strong style={{ fontSize: '15px', color: '#0f172a' }}>
-                          {ep.ep_name || `Episode ${ep.episode_number}`}
-                        </strong>
-                      </div>
-                      <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                        Scheduled Date: <strong>{ep.scheduled_date || 'Not set'}</strong>
-                      </p>
-                    </div>
+                {approvedShowVideos.map((ep) => {
+                  const { viewUrl, downloadUrl } = getDriveLinks(ep);
+                  const hasDrive = Boolean(viewUrl || downloadUrl);
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span className={`review-status ${ep.status.toLowerCase().replace(' ', '-')}`}>
-                        {ep.status}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onOpenEpisodeInStudio(selectedShowForQueue, ep)}
-                        className="primary-button"
-                      >
-                        Open in QC Studio →
-                      </button>
+                  return (
+                    <div key={ep.id} style={styles.approvedEpRow}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ ...styles.epPill, backgroundColor: '#15803d' }}>
+                            Ep {ep.episode_number} ✓
+                          </span>
+                          <strong style={{ fontSize: '15px', color: '#0f172a' }}>
+                            {ep.ep_name || `Episode ${ep.episode_number}`}
+                          </strong>
+                        </div>
+                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
+                          Scheduled Date: <strong>{ep.scheduled_date || 'Not set'}</strong>
+                        </p>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        {hasDrive ? (
+                          <>
+                            <a
+                              href={downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={styles.driveDownloadBtn}
+                            >
+                              ⬇ Download (Google Drive)
+                            </a>
+                            <a
+                              href={viewUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={styles.driveViewBtn}
+                            >
+                              Open in Drive ↗
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyDriveLink(viewUrl, ep.id)}
+                              className="secondary-button"
+                              style={{ padding: '7px 11px', fontSize: '12px' }}
+                            >
+                              {copiedId === ep.id ? '✓ Copied' : 'Copy Link'}
+                            </button>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>
+                            No Google Drive link attached
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -526,7 +907,7 @@ export default function QcstarPortal({
                 <strong>{showToEnd.show_id}</strong>)?
                 <br />
                 <span style={{ fontSize: '13px', color: '#991b1b' }}>
-                  Once ended, this Show will be removed from active QC queues and Creator/Agency login will be closed.
+                  Once ended, this Show will move to Ended Shows and Creator/Agency login will be closed (any QCstar can reopen it later if needed).
                 </span>
               </p>
 
@@ -748,6 +1129,24 @@ const styles = {
     fontSize: '12px',
     fontWeight: '700',
   },
+  reeditedBadge: {
+    backgroundColor: '#fef3c7',
+    color: '#92400e',
+    border: '1px solid #fde68a',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    fontSize: '10px',
+    fontWeight: '800',
+  },
+  latestBadge: {
+    backgroundColor: '#dbeafe',
+    color: '#1e3a8a',
+    border: '1px solid #bfdbfe',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    fontSize: '10px',
+    fontWeight: '800',
+  },
   showsListGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))',
@@ -768,10 +1167,78 @@ const styles = {
     fontSize: '11px',
     fontWeight: '700',
   },
+  cardApprovedPillBtn: {
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+    border: '1px solid #bbf7d0',
+    padding: '4px 9px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+  subTabBar: {
+    display: 'flex',
+    gap: '10px',
+    marginBottom: '18px',
+    borderBottom: '1px solid #e2e8f0',
+    paddingBottom: '12px',
+    flexWrap: 'wrap',
+  },
+  subTabActive: {
+    backgroundColor: '#1e3a8a',
+    color: '#ffffff',
+    border: 'none',
+    padding: '8px 14px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+  subTabActiveGreen: {
+    backgroundColor: '#15803d',
+    color: '#ffffff',
+    border: 'none',
+    padding: '8px 14px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+  subTabActiveRed: {
+    backgroundColor: '#b91c1c',
+    color: '#ffffff',
+    border: 'none',
+    padding: '8px 14px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+  subTabInactive: {
+    backgroundColor: '#f1f5f9',
+    color: '#475569',
+    border: '1px solid #e2e8f0',
+    padding: '8px 14px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '600',
+    cursor: 'pointer',
+  },
   endShowBtn: {
     backgroundColor: '#fee2e2',
     color: '#b91c1c',
     border: '1px solid #fecaca',
+    padding: '3px 9px',
+    borderRadius: '6px',
+    fontSize: '11px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+  reopenShowBtn: {
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+    border: '1px solid #bbf7d0',
     padding: '3px 9px',
     borderRadius: '6px',
     fontSize: '11px',
@@ -804,10 +1271,49 @@ const styles = {
     alignItems: 'center',
     padding: '14px 16px',
     borderRadius: '10px',
-    border: '1px solid #e2e8f0',
+    border: '1.5px solid #e2e8f0',
     backgroundColor: '#f8fafc',
     flexWrap: 'wrap',
     gap: '12px',
+  },
+  approvedEpRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '14px 16px',
+    borderRadius: '10px',
+    border: '1.5px solid #bbf7d0',
+    backgroundColor: '#f0fdf4',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  driveDownloadBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    backgroundColor: '#15803d',
+    color: '#ffffff',
+    textDecoration: 'none',
+    padding: '8px 14px',
+    borderRadius: '8px',
+    fontSize: '13px',
+    fontWeight: '700',
+    border: 'none',
+    cursor: 'pointer',
+  },
+  driveViewBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '5px',
+    backgroundColor: '#ffffff',
+    color: '#1e3a8a',
+    textDecoration: 'none',
+    padding: '7px 12px',
+    borderRadius: '8px',
+    fontSize: '12px',
+    fontWeight: '700',
+    border: '1px solid #cbd5e1',
+    cursor: 'pointer',
   },
   label: {
     display: 'block',
@@ -841,7 +1347,7 @@ const modalStyles = {
     backgroundColor: '#ffffff',
     borderRadius: '12px',
     width: '100%',
-    maxWidth: '440px',
+    maxWidth: '460px',
     padding: '24px',
     boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15)',
   },

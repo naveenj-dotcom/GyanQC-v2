@@ -5,24 +5,40 @@ import ReferenceOverlay from '../ReferenceOverlay';
 const DEFAULT_OVERLAY_URL = '/default-overlay.png';
 
 export default function CreatorDashboard({ currentUser, show: initialShow }) {
-  // Home view launcher: 'home' | 'calendar' | 'shows' | 'player'
+  // Home view launcher: 'home' | 'calendar' | 'shows' | 'player' | 'reports'
   const [activeView, setActiveView] = useState('home');
 
-  // All active shows assigned to this Show ID (POC phone number)
+  // All active shows assigned to this Show ID (POC phone number) — latest show first
   const [activeShows, setActiveShows] = useState(() => {
-    if (Array.isArray(currentUser?.shows) && currentUser.shows.length > 0) {
-      return currentUser.shows;
-    }
-    return initialShow ? [initialShow] : [];
+    const raw =
+      Array.isArray(currentUser?.shows) && currentUser.shows.length > 0
+        ? currentUser.shows
+        : initialShow
+        ? [initialShow]
+        : [];
+    return [...raw].sort(
+      (a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0)
+    );
   });
   const [selectedShow, setSelectedShow] = useState(
-    () => initialShow || activeShows[0] || null
+    () => activeShows[0] || initialShow || null
   );
 
-  // Episodes state (Active Shows & Submissions)
+  // Episodes state (Active Shows & Submissions — sorted descending so newest/highest Ep is always at top)
   const [episodes, setEpisodes] = useState([]);
   const [loadingEpisodes, setLoadingEpisodes] = useState(false);
   const [savingEp, setSavingEp] = useState(null);
+
+  // All episodes across ALL active shows (used by Reports tab)
+  const [allShowEpisodes, setAllShowEpisodes] = useState([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [reportMonth, setReportMonth] = useState(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  });
+  const [reportShowFilter, setReportShowFilter] = useState('all');
 
   // Monthly Calendar state (Across all active shows)
   const [calendarEntries, setCalendarEntries] = useState([]);
@@ -69,7 +85,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Refresh all active shows assigned to this Show ID
+  // Refresh all active shows assigned to this Show ID (latest created show at top)
   const refreshActiveShows = async () => {
     const showIdCode = currentUser?.show_id || initialShow?.show_id;
     if (!showIdCode) return;
@@ -92,7 +108,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
     }
   };
 
-  // Load episodes for the currently selected show
+  // Load episodes for the currently selected show (highest episode number at top so no scrolling for 100+ eps)
   const loadEpisodes = async (targetShow = selectedShow) => {
     if (!targetShow?.id) return;
     setLoadingEpisodes(true);
@@ -101,11 +117,11 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
       .from('qc_episodes')
       .select('*')
       .eq('show_uuid', targetShow.id)
-      .order('episode_number', { ascending: true });
+      .order('episode_number', { ascending: false });
 
     if (!error && data) {
       if (data.length === 0) {
-        const initialRows = [1, 2, 3, 4, 5].map((num) => ({
+        const initialRows = [5, 4, 3, 2, 1].map((num) => ({
           show_uuid: targetShow.id,
           episode_number: num,
           ep_name: '',
@@ -120,7 +136,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
           .from('qc_episodes')
           .insert(initialRows)
           .select('*')
-          .order('episode_number', { ascending: true });
+          .order('episode_number', { ascending: false });
 
         if (inserted) setEpisodes(inserted);
       } else {
@@ -132,6 +148,27 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
       }
     }
     setLoadingEpisodes(false);
+  };
+
+  // Load all episodes across ALL active shows for the Reports tab
+  const loadAllShowEpisodes = async (showsList = activeShows) => {
+    const showIds = showsList.map((s) => s.id);
+    if (showIds.length === 0) {
+      setAllShowEpisodes([]);
+      return;
+    }
+
+    setLoadingReports(true);
+    const { data, error } = await supabase
+      .from('qc_episodes')
+      .select('*')
+      .in('show_uuid', showIds)
+      .order('episode_number', { ascending: false });
+
+    if (!error && data) {
+      setAllShowEpisodes(data);
+    }
+    setLoadingReports(false);
   };
 
   // Load calendar across ALL active shows for this creator/agency
@@ -168,6 +205,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
   useEffect(() => {
     if (activeShows.length > 0) {
       loadCalendar(activeShows);
+      loadAllShowEpisodes(activeShows);
     }
   }, [activeShows]);
 
@@ -223,12 +261,14 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
       alert('Error saving episode: ' + error.message);
     } else if (data) {
       setEpisodes((prev) => prev.map((item) => (item.id === ep.id ? data : item)));
+      loadAllShowEpisodes(activeShows);
       if (selectedDetailEp?.id === ep.id) {
         setSelectedDetailEp(null);
       }
     }
   };
 
+  // Prepend newly added episode slot right at the top so creators never scroll down
   const handleAddMoreEpisode = async () => {
     if (!selectedShow?.id) return;
     const nextNumber =
@@ -254,7 +294,8 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
       .single();
 
     if (!error && data) {
-      setEpisodes((prev) => [...prev, data]);
+      setEpisodes((prev) => [data, ...prev]);
+      loadAllShowEpisodes(activeShows);
     }
   };
 
@@ -344,6 +385,14 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
     }
   };
 
+  const shiftReportMonth = (delta) => {
+    const [y, m] = reportMonth.split('-').map(Number);
+    const next = new Date(y, m - 1 + delta, 1);
+    setReportMonth(
+      `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
+    );
+  };
+
   // Monthly calendar grid computation
   const [yearStr, monthStr] = selectedMonth.split('-');
   const yearNum = Number(yearStr);
@@ -370,11 +419,11 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
   }
 
   // =========================================================================
-  // HOME LAUNCHER SCREEN (1. Calendar | 2. Active Shows | 3. Reference Player)
+  // HOME LAUNCHER SCREEN (1. Calendar | 2. Active Shows | 3. Player | 4. Reports)
   // =========================================================================
   if (activeView === 'home') {
     return (
-      <div style={{ maxWidth: '960px', margin: '44px auto', padding: '0 20px' }}>
+      <div style={{ maxWidth: '1040px', margin: '44px auto', padding: '0 20px' }}>
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <span style={styles.showBadge}>
             SHOW ID: {currentUser?.show_id || selectedShow?.show_id} · {activeShows.length} ACTIVE{' '}
@@ -398,7 +447,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
             <span style={styles.tabNumber}>1</span>
             <strong style={styles.tabTitle}>Calendar</strong>
             <span style={styles.tabSub}>
-              View scheduled episode dates & monthly delivery targets
+              View scheduled episode dates &amp; monthly delivery targets
             </span>
           </button>
 
@@ -411,7 +460,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
             <span style={styles.tabNumber}>2</span>
             <strong style={styles.tabTitle}>Active Shows</strong>
             <span style={styles.tabSub}>
-              Submit episodes, check QC status & jump to feedback timestamps
+              Submit episodes, check QC status &amp; jump to feedback timestamps
             </span>
           </button>
 
@@ -425,6 +474,23 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
             <strong style={styles.tabTitle}>QC Reference Player</strong>
             <span style={styles.tabSub}>
               Preview Drive or local videos with the official 9:16 safe-zone overlay
+            </span>
+          </button>
+
+          {/* 4. Monthly Reports */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveView('reports');
+              loadAllShowEpisodes(activeShows);
+              loadCalendar(activeShows);
+            }}
+            style={styles.homeCard}
+          >
+            <span style={{ ...styles.tabNumber, backgroundColor: '#15803d' }}>4</span>
+            <strong style={styles.tabTitle}>Reports</strong>
+            <span style={styles.tabSub}>
+              Monthly approved video counts by show &amp; upcoming calendar schedule
             </span>
           </button>
         </div>
@@ -466,6 +532,17 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
           >
             3. Reference Player
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveView('reports');
+              loadAllShowEpisodes(activeShows);
+              loadCalendar(activeShows);
+            }}
+            style={activeView === 'reports' ? styles.navPillActive : styles.navPill}
+          >
+            4. Reports
+          </button>
         </div>
 
         <button
@@ -473,6 +550,8 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
           onClick={() => {
             refreshActiveShows();
             if (selectedShow) loadEpisodes(selectedShow);
+            loadAllShowEpisodes(activeShows);
+            loadCalendar(activeShows);
           }}
           className="secondary-button"
           style={{ padding: '7px 12px', fontSize: '13px' }}
@@ -558,7 +637,8 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
                   )
                 )}
               </div>
-{/* Actionable Deliverables: Missed (Previous Days) + Today + Tomorrow */}
+
+              {/* Actionable Deliverables: Missed (Previous Days) + Today + Tomorrow */}
               {(() => {
                 const now = new Date();
                 const toIso = (d) =>
@@ -586,7 +666,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
                 return (
                   <div style={{ marginTop: '22px' }}>
                     <h4 style={{ margin: '0 0 10px', fontSize: '15px', color: '#0f172a' }}>
-                      Action Queue — Missed, Today & Tomorrow ({actionItems.length})
+                      Action Queue — Missed, Today &amp; Tomorrow ({actionItems.length})
                     </h4>
 
                     {actionItems.length === 0 ? (
@@ -662,23 +742,22 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
                   </div>
                 );
               })()}
-
             </>
           )}
         </div>
       )}
 
       {/* ===================================================================== */}
-      {/* OPTION 2: ACTIVE SHOWS & EPISODE SUBMISSIONS                          */}
+      {/* OPTION 2: ACTIVE SHOWS & EPISODE SUBMISSIONS (LATEST AT TOP)          */}
       {/* ===================================================================== */}
       {activeView === 'shows' && (
         <div style={{ marginTop: '16px' }}>
-          {/* Active Shows Switcher Cards (if creator has 1 or multiple shows) */}
+          {/* Active Shows Switcher Cards (Latest created show always first) */}
           <div className="panel" style={{ marginBottom: '16px' }}>
             <div className="panel-heading" style={{ marginBottom: '12px' }}>
               <div>
                 <h3>Your Active Shows ({activeShows.length})</h3>
-                <p>Select a Show to submit episodes or inspect QC feedback.</p>
+                <p>Most recently created show appears first. Select a Show to submit episodes.</p>
               </div>
             </div>
 
@@ -716,16 +795,29 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
             </div>
           </div>
 
-          {/* Episode Submissions List for Selected Show */}
+          {/* Episode Submissions List for Selected Show (Latest Episode at Top) */}
           {selectedShow && (
             <div className="panel">
               <div className="panel-heading">
                 <div>
-                  <h3>{selectedShow.show_name} — Episode Submissions</h3>
+                  <h3>{selectedShow.show_name} — Episode Submissions (Latest First)</h3>
                   <p>
-                    Fill Episode Name, Google Drive link ("Anyone with the link"), and Scheduled Date.
+                    Newest episode slots appear right at the top so you never have to scroll down.
                   </p>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddMoreEpisode}
+                  className="primary-button"
+                  style={{ fontSize: '13px' }}
+                >
+                  + Add Next Episode (Ep{' '}
+                  {episodes.length > 0
+                    ? Math.max(...episodes.map((e) => e.episode_number)) + 1
+                    : 1}
+                  )
+                </button>
               </div>
 
               {loadingEpisodes ? (
@@ -854,14 +946,6 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
                       </div>
                     );
                   })}
-
-                  <button
-                    type="button"
-                    onClick={handleAddMoreEpisode}
-                    style={styles.addMoreBtn}
-                  >
-                    + Add Episode details
-                  </button>
                 </div>
               )}
             </div>
@@ -986,7 +1070,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
                   >
                     <span className="upload-icon">▶</span>
                     <strong>Upload Local Video</strong>
-                    <span>Check safe zones & framing before uploading to Drive</span>
+                    <span>Check safe zones &amp; framing before uploading to Drive</span>
                     <span className="upload-format">MP4, MOV, WEBM</span>
                   </button>
 
@@ -1029,6 +1113,485 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
           </div>
         </div>
       )}
+
+      {/* ===================================================================== */}
+      {/* OPTION 4: MONTHLY APPROVAL & SCHEDULE REPORTS                         */}
+      {/* ===================================================================== */}
+      {activeView === 'reports' && (() => {
+        const now = new Date();
+        const currentMonthIso = `${now.getFullYear()}-${String(
+          now.getMonth() + 1
+        ).padStart(2, '0')}`;
+
+        const isFutureMonth = reportMonth > currentMonthIso;
+        const isCurrentMonth = reportMonth === currentMonthIso;
+
+        const [rYear, rMonth] = reportMonth.split('-').map(Number);
+        const rMonthLabel = new Date(rYear, rMonth - 1, 1).toLocaleString('default', {
+          month: 'long',
+          year: 'numeric',
+        });
+
+        const visibleShows =
+          reportShowFilter === 'all'
+            ? activeShows
+            : activeShows.filter((s) => s.id === reportShowFilter);
+
+        const visibleShowIds = new Set(visibleShows.map((s) => s.id));
+
+        const monthEpisodes = allShowEpisodes.filter((ep) => {
+          if (!visibleShowIds.has(ep.show_uuid)) return false;
+          const dateStr = ep.scheduled_date || (ep.updated_at || '').slice(0, 10);
+          return dateStr.startsWith(reportMonth);
+        });
+
+        const monthCalendar = calendarEntries.filter(
+          (c) =>
+            visibleShowIds.has(c.show_uuid) &&
+            (c.schedule_date || '').startsWith(reportMonth)
+        );
+
+        const approvedMonthEps = monthEpisodes.filter((e) => e.status === 'Approved');
+        const pendingMonthEps = monthEpisodes.filter(
+          (e) => e.status === 'Pending' || e.status === 'In Review'
+        );
+        const changesMonthEps = monthEpisodes.filter(
+          (e) => e.status === 'Changes Requested'
+        );
+
+        const showBreakdown = visibleShows.map((s) => {
+          const sEps = monthEpisodes.filter((e) => e.show_uuid === s.id);
+          const sCal = monthCalendar.filter((c) => c.show_uuid === s.id);
+          return {
+            show: s,
+            approvedCount: sEps.filter((e) => e.status === 'Approved').length,
+            pendingCount: sEps.filter(
+              (e) => e.status === 'Pending' || e.status === 'In Review'
+            ).length,
+            changesCount: sEps.filter((e) => e.status === 'Changes Requested').length,
+            scheduledCount: sCal.length,
+          };
+        });
+
+        const handleExportReportCsv = () => {
+          const headers = isFutureMonth
+            ? ['Month', 'Show Name', 'Show ID', 'Scheduled Date', 'Episode Label', 'Notes']
+            : [
+                'Month',
+                'Show Name',
+                'Show ID',
+                'Episode Number',
+                'Episode Name',
+                'Scheduled Date',
+                'Status',
+                'Google Drive URL',
+              ];
+
+          const rows = isFutureMonth
+            ? monthCalendar.map((item) => {
+                const sObj = activeShows.find((s) => s.id === item.show_uuid);
+                return [
+                  rMonthLabel,
+                  sObj?.show_name || '',
+                  sObj?.show_id || '',
+                  item.schedule_date || '',
+                  item.episode_label || '',
+                  (item.notes || '').replace(/"/g, '""'),
+                ];
+              })
+            : approvedMonthEps.map((ep) => {
+                const sObj = activeShows.find((s) => s.id === ep.show_uuid);
+                return [
+                  rMonthLabel,
+                  sObj?.show_name || '',
+                  sObj?.show_id || '',
+                  `Ep ${ep.episode_number}`,
+                  (ep.ep_name || '').replace(/"/g, '""'),
+                  ep.scheduled_date || '',
+                  ep.status,
+                  ep.drive_url || '',
+                ];
+              });
+
+          const csvContent =
+            'data:text/csv;charset=utf-8,' +
+            [headers, ...rows]
+              .map((r) => r.map((v) => `"${v}"`).join(','))
+              .join('\n');
+
+          const encodedUri = encodeURI(csvContent);
+          const link = document.createElement('a');
+          link.setAttribute('href', encodedUri);
+          link.setAttribute(
+            'download',
+            `GyanQC_Report_${reportMonth}_${isFutureMonth ? 'Scheduled' : 'Approved'}.csv`
+          );
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        return (
+          <div style={{ marginTop: '16px' }}>
+            <div className="panel">
+              <div className="panel-heading">
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0 }}>
+                      {isFutureMonth
+                        ? `Upcoming Calendar Schedule Report — ${rMonthLabel}`
+                        : `Approved Videos Report — ${rMonthLabel}`}
+                    </h3>
+                    <span
+                      style={{
+                        padding: '3px 10px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: '700',
+                        backgroundColor: isFutureMonth
+                          ? '#dbeafe'
+                          : isCurrentMonth
+                          ? '#dcfce7'
+                          : '#f1f5f9',
+                        color: isFutureMonth
+                          ? '#1e3a8a'
+                          : isCurrentMonth
+                          ? '#166534'
+                          : '#334155',
+                      }}
+                    >
+                      {isFutureMonth
+                        ? 'FUTURE SCHEDULE'
+                        : isCurrentMonth
+                        ? 'CURRENT MONTH'
+                        : 'PAST MONTH'}
+                    </span>
+                  </div>
+                  <p style={{ marginTop: '6px' }}>
+                    {isFutureMonth
+                      ? 'Showing calendar-scheduled episodes planned across your shows for upcoming months.'
+                      : 'Showing approved videos, show-by-show approval counts, and calendar targets.'}
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => shiftReportMonth(-1)}
+                    className="secondary-button"
+                    style={{ padding: '7px 11px', fontSize: '13px' }}
+                  >
+                    ← Prev
+                  </button>
+
+                  <input
+                    type="month"
+                    value={reportMonth}
+                    onChange={(e) => setReportMonth(e.target.value)}
+                    style={{ ...styles.input, width: '165px', fontWeight: '600' }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => shiftReportMonth(1)}
+                    className="secondary-button"
+                    style={{ padding: '7px 11px', fontSize: '13px' }}
+                  >
+                    Next →
+                  </button>
+
+                  <select
+                    value={reportShowFilter}
+                    onChange={(e) => setReportShowFilter(e.target.value)}
+                    style={{ ...styles.input, width: 'auto', minWidth: '185px' }}
+                  >
+                    <option value="all">All Active Shows ({activeShows.length})</option>
+                    {activeShows.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.show_name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    onClick={handleExportReportCsv}
+                    className="primary-button"
+                    style={{ height: '40px', fontSize: '13px' }}
+                  >
+                    ⬇ Export CSV
+                  </button>
+                </div>
+              </div>
+
+              {loadingReports || loadingCalendar ? (
+                <p style={{ color: '#64748b' }}>Loading report metrics...</p>
+              ) : isFutureMonth ? (
+                <>
+                  <div style={styles.kpiGrid}>
+                    <div style={{ ...styles.kpiCard, borderColor: '#93c5fd', backgroundColor: '#eff6ff' }}>
+                      <span style={styles.kpiLabel}>Scheduled on Calendar</span>
+                      <strong style={{ ...styles.kpiValue, color: '#1e3a8a' }}>
+                        {monthCalendar.length}
+                      </strong>
+                      <span style={styles.kpiSub}>Total videos scheduled in {rMonthLabel}</span>
+                    </div>
+
+                    <div style={styles.kpiCard}>
+                      <span style={styles.kpiLabel}>Shows with Schedule</span>
+                      <strong style={styles.kpiValue}>
+                        {showBreakdown.filter((b) => b.scheduledCount > 0).length} / {visibleShows.length}
+                      </strong>
+                      <span style={styles.kpiSub}>Active shows with planned dates</span>
+                    </div>
+
+                    <div style={{ ...styles.kpiCard, borderColor: '#86efac', backgroundColor: '#f0fdf4' }}>
+                      <span style={styles.kpiLabel}>Already Approved Early</span>
+                      <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
+                        {approvedMonthEps.length}
+                      </strong>
+                      <span style={styles.kpiSub}>Submitted &amp; approved ahead of schedule</span>
+                    </div>
+                  </div>
+
+                  <h4 style={styles.reportSectionTitle}>
+                    Show-by-Show Scheduled Videos — {rMonthLabel}
+                  </h4>
+                  <div style={styles.tableWrapper}>
+                    <table style={styles.reportTable}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Show Name</th>
+                          <th style={styles.th}>Show ID</th>
+                          <th style={styles.thCenter}>Scheduled Videos</th>
+                          <th style={styles.thCenter}>Early Approved</th>
+                          <th style={styles.thRight}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {showBreakdown.map((row) => (
+                          <tr key={row.show.id}>
+                            <td style={styles.td}>
+                              <strong>{row.show.show_name}</strong>
+                            </td>
+                            <td style={styles.td}>{row.show.show_id}</td>
+                            <td style={styles.tdCenter}>
+                              <span style={styles.countBadgeBlue}>{row.scheduledCount}</span>
+                            </td>
+                            <td style={styles.tdCenter}>
+                              <span style={styles.countBadgeGreen}>{row.approvedCount}</span>
+                            </td>
+                            <td style={styles.tdRight}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedShow(row.show);
+                                  setActiveView('shows');
+                                }}
+                                className="secondary-button"
+                                style={{ padding: '4px 10px', fontSize: '12px' }}
+                              >
+                                Submit Episodes →
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <h4 style={{ ...styles.reportSectionTitle, marginTop: '24px' }}>
+                    Scheduled Calendar Entries ({monthCalendar.length})
+                  </h4>
+                  {monthCalendar.length === 0 ? (
+                    <div style={styles.emptyReportBox}>
+                      <strong>No videos scheduled on the calendar for {rMonthLabel}.</strong>
+                      <span>Use Next → or the month picker to inspect other upcoming months.</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {monthCalendar.map((item) => {
+                        const sObj = activeShows.find((s) => s.id === item.show_uuid);
+                        return (
+                          <div key={item.id} style={styles.scheduleListRow}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <span style={styles.dateTag}>{item.schedule_date}</span>
+                              {sObj && (
+                                <span style={styles.showInlineBadge}>{sObj.show_name}</span>
+                              )}
+                              <strong style={{ color: '#0f172a' }}>{item.episode_label}</strong>
+                              {item.notes && (
+                                <span style={{ fontSize: '13px', color: '#475569' }}>
+                                  — {item.notes}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (sObj) setSelectedShow(sObj);
+                                setActiveView('shows');
+                              }}
+                              className="secondary-button"
+                              style={{ padding: '5px 12px', fontSize: '12px', fontWeight: '700' }}
+                            >
+                              Open Show →
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div style={styles.kpiGrid}>
+                    <div style={{ ...styles.kpiCard, borderColor: '#86efac', backgroundColor: '#f0fdf4' }}>
+                      <span style={styles.kpiLabel}>Approved Videos</span>
+                      <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
+                        {approvedMonthEps.length}
+                      </strong>
+                      <span style={styles.kpiSub}>
+                        Out of {monthCalendar.length || monthEpisodes.length} scheduled in {rMonthLabel}
+                      </span>
+                    </div>
+
+                    <div style={styles.kpiCard}>
+                      <span style={styles.kpiLabel}>Calendar Scheduled</span>
+                      <strong style={styles.kpiValue}>{monthCalendar.length}</strong>
+                      <span style={styles.kpiSub}>Target episodes on calendar</span>
+                    </div>
+
+                    <div style={{ ...styles.kpiCard, borderColor: '#fde68a', backgroundColor: '#fffbeb' }}>
+                      <span style={styles.kpiLabel}>Pending QC</span>
+                      <strong style={{ ...styles.kpiValue, color: '#b45309' }}>
+                        {pendingMonthEps.length}
+                      </strong>
+                      <span style={styles.kpiSub}>Awaiting QCstar review</span>
+                    </div>
+
+                    <div style={{ ...styles.kpiCard, borderColor: '#fecaca', backgroundColor: '#fef2f2' }}>
+                      <span style={styles.kpiLabel}>Changes Requested</span>
+                      <strong style={{ ...styles.kpiValue, color: '#b91c1c' }}>
+                        {changesMonthEps.length}
+                      </strong>
+                      <span style={styles.kpiSub}>Needs revision &amp; resubmit</span>
+                    </div>
+                  </div>
+
+                  <h4 style={styles.reportSectionTitle}>
+                    Show-by-Show Breakdown — {rMonthLabel}
+                  </h4>
+                  <div style={styles.tableWrapper}>
+                    <table style={styles.reportTable}>
+                      <thead>
+                        <tr>
+                          <th style={styles.th}>Show Name</th>
+                          <th style={styles.th}>Show ID</th>
+                          <th style={styles.thCenter}>Approved</th>
+                          <th style={styles.thCenter}>Pending QC</th>
+                          <th style={styles.thCenter}>Changes Req.</th>
+                          <th style={styles.thCenter}>Calendar Target</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {showBreakdown.map((row) => (
+                          <tr key={row.show.id}>
+                            <td style={styles.td}>
+                              <strong>{row.show.show_name}</strong>
+                            </td>
+                            <td style={styles.td}>{row.show.show_id}</td>
+                            <td style={styles.tdCenter}>
+                              <span style={styles.countBadgeGreen}>{row.approvedCount}</span>
+                            </td>
+                            <td style={styles.tdCenter}>
+                              <span style={styles.countBadgeAmber}>{row.pendingCount}</span>
+                            </td>
+                            <td style={styles.tdCenter}>
+                              <span style={styles.countBadgeRed}>{row.changesCount}</span>
+                            </td>
+                            <td style={styles.tdCenter}>
+                              <span style={styles.countBadgeBlue}>{row.scheduledCount}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <h4 style={{ ...styles.reportSectionTitle, marginTop: '24px' }}>
+                    Approved Videos List ({approvedMonthEps.length})
+                  </h4>
+                  {approvedMonthEps.length === 0 ? (
+                    <div style={styles.emptyReportBox}>
+                      <strong>No approved videos recorded for {rMonthLabel}.</strong>
+                      <span>Use ← Prev / Next → above to check other months, or submit episodes in Active Shows.</span>
+                    </div>
+                  ) : (
+                    <div style={styles.tableWrapper}>
+                      <table style={styles.reportTable}>
+                        <thead>
+                          <tr>
+                            <th style={styles.th}>Show Name</th>
+                            <th style={styles.th}>Episode</th>
+                            <th style={styles.th}>Episode Title</th>
+                            <th style={styles.th}>Scheduled Date</th>
+                            <th style={styles.th}>Status</th>
+                            <th style={styles.thRight}>Video Link</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {approvedMonthEps.map((ep) => {
+                            const sObj = activeShows.find((s) => s.id === ep.show_uuid);
+                            return (
+                              <tr key={ep.id}>
+                                <td style={styles.td}>
+                                  <span style={styles.showInlineBadge}>
+                                    {sObj?.show_name || 'Show'}
+                                  </span>
+                                </td>
+                                <td style={styles.td}>
+                                  <strong>Ep {ep.episode_number}</strong>
+                                </td>
+                                <td style={styles.td}>
+                                  {ep.ep_name || `Episode ${ep.episode_number}`}
+                                </td>
+                                <td style={styles.td}>{ep.scheduled_date || '—'}</td>
+                                <td style={styles.td}>
+                                  <span style={styles.approvedCheckPill}>✓ Approved</span>
+                                </td>
+                                <td style={styles.tdRight}>
+                                  {ep.drive_url ? (
+                                    <a
+                                      href={ep.drive_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      style={{
+                                        color: '#1e3a8a',
+                                        fontWeight: '700',
+                                        fontSize: '12px',
+                                        textDecoration: 'none',
+                                      }}
+                                    >
+                                      Open Drive ↗
+                                    </a>
+                                  ) : (
+                                    <span style={{ color: '#94a3b8', fontSize: '12px' }}>—</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===================================================================== */}
       {/* QC DETAILS MODAL WITH INTEGRATED PLAYER + CLICKABLE TIMESTAMPS        */}
@@ -1078,9 +1641,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
               </div>
             </div>
 
-            {/* Split Layout: Left = Video Player with Overlay | Right = Clickable Timestamp Notes */}
             <div style={modalStyles.splitBody}>
-              {/* Left Column: Video Player */}
               <div>
                 <div ref={modalStageRef} className="video-stage" style={{ minHeight: '340px' }}>
                   {selectedDetailEp.drive_file_id ? (
@@ -1149,7 +1710,6 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
                 )}
               </div>
 
-              {/* Right Column: Clickable Timestamp Feedback + Resubmit */}
               <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
                 <div style={modalStyles.notesSection}>
                   <div
@@ -1257,14 +1817,14 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
 const styles = {
   homeGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
     gap: '20px',
   },
   homeCard: {
     backgroundColor: '#ffffff',
     border: '2px solid #e2e8f0',
     borderRadius: '16px',
-    padding: '34px 24px',
+    padding: '34px 22px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -1368,7 +1928,6 @@ const styles = {
     fontSize: '11px',
     padding: '2px 8px',
     borderRadius: '6px',
-    marginLeft: '8px',
   },
   weekHeaderGrid: {
     display: 'grid',
@@ -1393,7 +1952,7 @@ const styles = {
     backgroundColor: '#f8fafc',
     borderRadius: '8px',
   },
-calendarCell: {
+  calendarCell: {
     minHeight: '115px',
     height: 'auto',
     border: '1px solid #e2e8f0',
@@ -1508,15 +2067,145 @@ calendarCell: {
     boxSizing: 'border-box',
     backgroundColor: '#ffffff',
   },
-  addMoreBtn: {
-    padding: '14px',
-    borderRadius: '10px',
-    border: '2px dashed #94a3b8',
+  kpiGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+    gap: '14px',
+    marginBottom: '22px',
+  },
+  kpiCard: {
+    padding: '16px 18px',
+    borderRadius: '12px',
+    border: '1.5px solid #e2e8f0',
     backgroundColor: '#f8fafc',
-    color: '#1e3a8a',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  kpiLabel: {
+    fontSize: '12px',
+    fontWeight: '700',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: '0.03em',
+  },
+  kpiValue: {
+    fontSize: '30px',
+    fontWeight: '800',
+    color: '#0f172a',
+    lineHeight: 1.15,
+  },
+  kpiSub: {
+    fontSize: '12px',
+    color: '#64748b',
+  },
+  reportSectionTitle: {
+    margin: '0 0 10px',
     fontSize: '15px',
     fontWeight: '700',
-    cursor: 'pointer',
+    color: '#0f172a',
+  },
+  tableWrapper: {
+    overflowX: 'auto',
+    border: '1px solid #e2e8f0',
+    borderRadius: '10px',
+  },
+  reportTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13px',
+    backgroundColor: '#ffffff',
+  },
+  th: {
+    textAlign: 'left',
+    padding: '11px 14px',
+    backgroundColor: '#f1f5f9',
+    color: '#334155',
+    fontWeight: '700',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  thCenter: {
+    textAlign: 'center',
+    padding: '11px 14px',
+    backgroundColor: '#f1f5f9',
+    color: '#334155',
+    fontWeight: '700',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  thRight: {
+    textAlign: 'right',
+    padding: '11px 14px',
+    backgroundColor: '#f1f5f9',
+    color: '#334155',
+    fontWeight: '700',
+    borderBottom: '1px solid #e2e8f0',
+  },
+  td: {
+    padding: '11px 14px',
+    borderBottom: '1px solid #f1f5f9',
+    color: '#1e293b',
+  },
+  tdCenter: {
+    padding: '11px 14px',
+    borderBottom: '1px solid #f1f5f9',
+    textAlign: 'center',
+  },
+  tdRight: {
+    padding: '11px 14px',
+    borderBottom: '1px solid #f1f5f9',
+    textAlign: 'right',
+  },
+  countBadgeGreen: {
+    display: 'inline-block',
+    minWidth: '28px',
+    padding: '3px 9px',
+    borderRadius: '999px',
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+    fontWeight: '800',
+    fontSize: '12px',
+  },
+  countBadgeBlue: {
+    display: 'inline-block',
+    minWidth: '28px',
+    padding: '3px 9px',
+    borderRadius: '999px',
+    backgroundColor: '#dbeafe',
+    color: '#1e3a8a',
+    fontWeight: '800',
+    fontSize: '12px',
+  },
+  countBadgeAmber: {
+    display: 'inline-block',
+    minWidth: '28px',
+    padding: '3px 9px',
+    borderRadius: '999px',
+    backgroundColor: '#fef3c7',
+    color: '#92400e',
+    fontWeight: '800',
+    fontSize: '12px',
+  },
+  countBadgeRed: {
+    display: 'inline-block',
+    minWidth: '28px',
+    padding: '3px 9px',
+    borderRadius: '999px',
+    backgroundColor: '#fee2e2',
+    color: '#991b1b',
+    fontWeight: '800',
+    fontSize: '12px',
+  },
+  emptyReportBox: {
+    padding: '26px 20px',
+    textAlign: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: '10px',
+    border: '1px dashed #cbd5e1',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    color: '#475569',
+    fontSize: '14px',
   },
 };
 
