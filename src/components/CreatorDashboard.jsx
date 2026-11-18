@@ -1275,7 +1275,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                     controls
                     playsInline
                     className="review-video"
-                    style={{ maxHeight: "55vh" }}
+                    style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", display: "block", background: "#000" }}
                     onError={() =>
                       setPreviewError(
                         'Could not stream video. Check that Google Drive access is set to "Anyone with the link".'
