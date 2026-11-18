@@ -123,6 +123,53 @@ export default function App() {
   const stageRef = useRef(null);
   const videoInputRef = useRef(null);
   const lastSecondRef = useRef(-1);
+  // In-memory LRU cache: driveFileId -> objectURL (instant 0ms seek & zero re-buffering)
+  const videoBlobCacheRef = useRef(new Map());
+  const inFlightFetchesRef = useRef(new Set());
+
+  const warmDriveVideoToBlob = async (fileId, { swapIfActive = false } = {}) => {
+    if (!fileId) return null;
+    const cache = videoBlobCacheRef.current;
+    if (cache.has(fileId)) return cache.get(fileId);
+    if (inFlightFetchesRef.current.has(fileId)) return null;
+
+    inFlightFetchesRef.current.add(fileId);
+    try {
+      const res = await fetch(`${VIDEO_PROXY_URL}?id=${fileId}`);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (!blob || blob.size === 0) return null;
+
+      if (cache.size >= 5) {
+        const oldestKey = cache.keys().next().value;
+        const oldUrl = cache.get(oldestKey);
+        if (oldUrl) URL.revokeObjectURL(oldUrl);
+        cache.delete(oldestKey);
+      }
+
+      const blobUrl = URL.createObjectURL(blob);
+      cache.set(fileId, blobUrl);
+
+      if (swapIfActive && videoRef.current) {
+        const currentSrc = videoRef.current.getAttribute("src") || "";
+        if (currentSrc.includes(fileId)) {
+          const savedTime = videoRef.current.currentTime || 0;
+          const wasPlaying = !videoRef.current.paused;
+          setVideoUrl(blobUrl);
+          requestAnimationFrame(() => {
+            if (!videoRef.current) return;
+            videoRef.current.currentTime = savedTime;
+            if (wasPlaying) videoRef.current.play().catch(() => {});
+          });
+        }
+      }
+      return blobUrl;
+    } catch {
+      return null;
+    } finally {
+      inFlightFetchesRef.current.delete(fileId);
+    }
+  };
 
   const [videoUrl, setVideoUrl] = useState("");
   const [videoName, setVideoName] = useState("");
@@ -255,20 +302,10 @@ export default function App() {
     const idx = submitted.findIndex((ep) => ep.id === activeEpisode.id);
     if (idx === -1) return;
 
-    const neighbors = [submitted[idx - 1], submitted[idx + 1]].filter(Boolean);
-    const createdLinks = [];
+    const neighbors = [submitted[idx + 1], submitted[idx - 1]].filter(Boolean);
     neighbors.forEach((ep) => {
-      const link = document.createElement("link");
-      link.rel = "prefetch";
-      link.as = "video";
-      link.href = `${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`;
-      document.head.appendChild(link);
-      createdLinks.push(link);
+      warmDriveVideoToBlob(ep.drive_file_id, { swapIfActive: false });
     });
-
-    return () => {
-      createdLinks.forEach((l) => l.remove());
-    };
   }, [activeEpisode, showEpisodes]);
 
   useEffect(() => {
@@ -414,7 +451,14 @@ export default function App() {
     setIsBuffering(true);
     lastSecondRef.current = -1;
     setActiveEpisode(ep);
-    setVideoUrl(`${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`);
+    const cachedBlob = videoBlobCacheRef.current.get(ep.drive_file_id);
+    if (cachedBlob) {
+      setVideoUrl(cachedBlob);
+      setIsBuffering(false);
+    } else {
+      setVideoUrl(`${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`);
+      warmDriveVideoToBlob(ep.drive_file_id, { swapIfActive: true });
+    }
     setVideoName(`Ep ${ep.episode_number}: ${ep.ep_name || "Untitled"}`);
     setCurrentTime(0);
     resetFeedbackHistory(Array.isArray(ep.feedback) ? ep.feedback : []);
