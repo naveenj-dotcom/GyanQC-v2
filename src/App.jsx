@@ -12,6 +12,7 @@ import "./App.css";
 
 const DEFAULT_OVERLAY_URL = "/default-overlay.png";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+const VIDEO_PROXY_URL = "https://gyanqc-video-proxy.naveenj.workers.dev";
 
 function getSavedSessionUser() {
   try {
@@ -388,7 +389,7 @@ export default function App() {
     setIsBuffering(true);
     lastSecondRef.current = -1;
     setActiveEpisode(ep);
-    setVideoUrl(`/api/drive-video?id=${ep.drive_file_id}`);
+    setVideoUrl(`${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`);
     setVideoName(`Ep ${ep.episode_number}: ${ep.ep_name || "Untitled"}`);
     setCurrentTime(0);
     resetFeedbackHistory(Array.isArray(ep.feedback) ? ep.feedback : []);
@@ -463,7 +464,7 @@ export default function App() {
     setActiveEpisode(null);
     setIsBuffering(true);
     lastSecondRef.current = -1;
-    setVideoUrl(`/api/drive-video?id=${fileId}`);
+    setVideoUrl(`${VIDEO_PROXY_URL}?id=${fileId}`);
     setVideoName(`Google Drive Video (${fileId.slice(0, 6)}...)`);
     setCurrentTime(0);
     resetFeedbackHistory([]);
@@ -931,7 +932,7 @@ export default function App() {
                       }}
                       onError={() => {
                         setIsBuffering(false);
-                        if (videoUrl.startsWith("/api/drive-video")) {
+                        if (videoUrl.startsWith(VIDEO_PROXY_URL)) {
                           setDriveError(
                             "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
                           );
