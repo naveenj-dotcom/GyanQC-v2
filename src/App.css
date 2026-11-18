@@ -800,3 +800,23 @@
     width: calc(36vh * 9 / 16) !important;
   }
 }
+
+/* Scoped mobile-only 9:16 edge-to-edge fit for Creator preview modal */
+@media (max-width: 767px) {
+  .creator-preview-modal {
+    padding: 14px !important;
+  }
+  .creator-preview-modal .video-stage {
+    min-height: 0 !important;
+  }
+  .creator-preview-modal .video-frame-wrapper {
+    width: 100% !important;
+    height: auto !important;
+    max-width: min(100%, calc(58vh * 9 / 16)) !important;
+    max-height: 58vh !important;
+    aspect-ratio: 9 / 16 !important;
+  }
+  .creator-preview-modal .video-frame-wrapper > video.review-video {
+    object-fit: cover !important;
+  }
+}

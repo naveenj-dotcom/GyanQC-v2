@@ -1218,6 +1218,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
           onClick={() => setPreviewEp(null)}
         >
           <div
+            className="creator-preview-modal"
             style={{ ...modalStyles.card, maxWidth: '820px' }}
             onClick={(e) => e.stopPropagation()}
           >
