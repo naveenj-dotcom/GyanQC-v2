@@ -1103,9 +1103,6 @@ export default function App() {
                       onWaiting={() => setIsBuffering(true)}
                       onCanPlay={() => {
                         setIsBuffering(false);
-                        if (activeEpisode?.drive_file_id) {
-                          upgradeVideoElementToBlob(videoRef.current, activeEpisode.drive_file_id, setVideoUrl);
-                        }
                         if (activeEpisode && Array.isArray(showEpisodes)) {
                           const submitted = [...showEpisodes]
                             .filter((item) => Boolean(item.drive_file_id))
@@ -1113,7 +1110,7 @@ export default function App() {
                           const idx = submitted.findIndex((item) => item.id === activeEpisode.id);
                           const nextEp = idx >= 0 ? submitted[idx + 1] : null;
                           if (nextEp?.drive_file_id) {
-                            warmVideoToRam(nextEp.drive_file_id);
+                            setTimeout(() => warmVideoToRam(nextEp.drive_file_id), 2000);
                           }
                         }
                       }}
