@@ -1268,24 +1268,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
             <div className="video-stage" style={{ minHeight: '360px', marginBottom: '12px' }}>
               <div className="video-frame-wrapper" style={{ height: "55vh", maxHeight: "55vh", width: "calc(55vh * 9 / 16)", aspectRatio: "9 / 16", margin: "0 auto", position: "relative" }}>
-                {creatorStreamMode === "adaptive" ? (
-                  <iframe className="adaptive-drive-frame" key={`${previewEp.drive_file_id}-${creatorSeekSec}`}
-                    src={getAdaptiveDriveUrl(previewEp.drive_file_id, creatorSeekSec)}
-                    title={`Ep ${previewEp.episode_number}`}
-                    allow="autoplay; fullscreen"
-                    allowFullScreen
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      width: "100%",
-                      height: "100%",
-                      border: 0,
-                      display: "block",
-                      background: "#000",
-                    }}
-                  />
-                ) : (
-                  <video
+                <video
                     ref={videoRef}
                     src={getStreamUrl(previewEp.drive_file_id)}
                     preload="auto"
@@ -1299,7 +1282,6 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                       )
                     }
                   />
-                )}
                 <div className="overlay-frame-layer">
                   <ReferenceOverlay
                     src={overlayUrl || '/default-overlay.png'}
@@ -1341,9 +1323,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                       <button
                         type="button"
                         onClick={() => {
-                          if (creatorStreamMode === "adaptive") {
-                            setCreatorSeekSec(Math.floor(Number(fb.time) || 0));
-                          } else if (videoRef.current) {
+                          if (videoRef.current) {
                             videoRef.current.currentTime = fb.time;
                             videoRef.current.play().catch(() => {});
                           }
