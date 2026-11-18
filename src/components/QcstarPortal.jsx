@@ -89,6 +89,8 @@ export default function QcstarPortal({
   const [showToEnd, setShowToEnd] = useState(null);
   const [endingShow, setEndingShow] = useState(false);
   const [reopeningId, setReopeningId] = useState(null);
+  const [showToDelete, setShowToDelete] = useState(null);
+  const [deletingShow, setDeletingShow] = useState(false);
 
   // Creators Directory View & List state
   const [creatorsList, setCreatorsList] = useState([]);
@@ -282,6 +284,34 @@ export default function QcstarPortal({
       alert('Could not reopen show due to database permissions.');
     } else {
       alert(`Show "${showObj.show_name}" is active again.`);
+      if (onShowsUpdated) onShowsUpdated();
+    }
+  };
+
+  // Permanently delete an ended Show (inside Manage Shows page)
+  const handleConfirmDeleteShow = async () => {
+    if (!showToDelete) return;
+    setDeletingShow(true);
+
+    // Clean up linked episodes and calendar entries first, then delete the show
+    await supabase.from("qc_episodes").delete().eq("show_uuid", showToDelete.id);
+    await supabase.from("qc_show_calendar").delete().eq("show_uuid", showToDelete.id);
+
+    const { error } = await supabase
+      .from("qc_shows")
+      .delete()
+      .eq("id", showToDelete.id);
+
+    setDeletingShow(false);
+    if (error) {
+      alert("Error deleting Show: " + error.message);
+    } else {
+      const deletedName = showToDelete.show_name;
+      if (selectedShowForQueue?.id === showToDelete.id) {
+        setSelectedShowForQueue(null);
+      }
+      setShowToDelete(null);
+      alert(`Show "${deletedName}" has been permanently deleted.`);
       if (onShowsUpdated) onShowsUpdated();
     }
   };
@@ -1126,14 +1156,23 @@ export default function QcstarPortal({
                           </td>
                           <td style={styles.td}>
                             {isEnded ? (
-                              <button
-                                type="button"
-                                disabled={reopeningId === s.id}
-                                onClick={() => handleReopenShow(s)}
-                                style={styles.reopenShowBtnTable}
-                              >
-                                {reopeningId === s.id ? 'Reopening...' : '↻ Reopen'}
-                              </button>
+                              <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  disabled={reopeningId === s.id}
+                                  onClick={() => handleReopenShow(s)}
+                                  style={styles.reopenShowBtnTable}
+                                >
+                                  {reopeningId === s.id ? 'Reopening...' : '↻ Reopen'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowToDelete(s)}
+                                  style={styles.deleteShowBtnTable}
+                                >
+                                  🗑 Delete
+                                </button>
+                              </div>
                             ) : (
                               <button
                                 type="button"
@@ -1544,6 +1583,43 @@ export default function QcstarPortal({
                   style={styles.confirmEndBtn}
                 >
                   {endingShow ? 'Ending Show...' : 'Yes, End Show'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Confirmation Popup for Permanently Deleting an Ended Show */}
+        {showToDelete && (
+          <div style={modalStyles.overlay} onClick={() => !deletingShow && setShowToDelete(null)}>
+            <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ margin: "0 0 8px", fontSize: "19px", color: "#991b1b" }}>
+                Delete Show Permanently
+              </h3>
+              <p style={{ margin: "0 0 18px", fontSize: "14px", color: "#475569", lineHeight: 1.5 }}>
+                Are you sure you want to permanently delete <strong>{showToDelete.show_name}</strong>?
+                <br />
+                <span style={{ fontSize: "13px", color: "#991b1b" }}>
+                  This will remove the Show along with all its episodes and calendar entries. This action cannot be undone.
+                </span>
+              </p>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  disabled={deletingShow}
+                  onClick={() => setShowToDelete(null)}
+                  className="secondary-button"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={deletingShow}
+                  onClick={handleConfirmDeleteShow}
+                  style={styles.confirmEndBtn}
+                >
+                  {deletingShow ? "Deleting..." : "Yes, Delete Show"}
                 </button>
               </div>
             </div>
@@ -2047,6 +2123,16 @@ const styles = {
     fontSize: '12px',
     fontWeight: '700',
     cursor: 'pointer',
+  },
+  deleteShowBtnTable: {
+    backgroundColor: "#dc2626",
+    color: "#ffffff",
+    border: "1px solid #b91c1c",
+    padding: "6px 12px",
+    borderRadius: "6px",
+    fontSize: "12px",
+    fontWeight: "700",
+    cursor: "pointer",
   },
   reopenShowBtnTable: {
     backgroundColor: '#dcfce7',
