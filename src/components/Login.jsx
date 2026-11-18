@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
 
-export default function Login({ onLoginSuccess }) {
+export default function Login({ onLoginSuccess, logoUrl }) {
   const [email, setEmail] = useState('');
   const [fullName, setFullName] = useState('');
   const [isRequestingAccess, setIsRequestingAccess] = useState(false);
@@ -207,7 +207,15 @@ export default function Login({ onLoginSuccess }) {
     <div style={styles.container}>
       <div style={styles.card}>
         <div style={styles.logoRow}>
-          <div style={styles.logoBadge}>G</div>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt="GyanQC Logo"
+              style={styles.customLogoImg}
+            />
+          ) : (
+            <div style={styles.logoBadge}>G</div>
+          )}
           <span style={styles.brandName}>GyanQC</span>
         </div>
 
@@ -357,6 +365,15 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  customLogoImg: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '8px',
+    objectFit: 'contain',
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2e8f0',
+    padding: '2px',
   },
   brandName: {
     fontSize: '19px',

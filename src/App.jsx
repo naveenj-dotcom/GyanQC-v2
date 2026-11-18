@@ -34,6 +34,7 @@ export default function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showOverlayModal, setShowOverlayModal] = useState(false);
   const [activeOverlayUrl, setActiveOverlayUrl] = useState(DEFAULT_OVERLAY_URL);
+  const [appLogoUrl, setAppLogoUrl] = useState("");
 
   // Unified QCstar + Admin navigation history
   const [qcstarNav, setQcstarNav] = useState({
@@ -116,21 +117,23 @@ export default function App() {
   const [status, setStatus] = useState("Pending");
   const [copied, setCopied] = useState(false);
 
-  const fetchGlobalOverlay = useCallback(async () => {
+  const fetchGlobalSettings = useCallback(async () => {
     const { data, error } = await supabase
       .from("qc_settings")
-      .select("value")
-      .eq("key", "video_overlay_url")
-      .maybeSingle();
+      .select("key, value")
+      .in("key", ["video_overlay_url", "app_logo_url"]);
 
-    if (!error && data?.value) {
-      setActiveOverlayUrl(data.value);
+    if (!error && Array.isArray(data)) {
+      const overlayRow = data.find((r) => r.key === "video_overlay_url");
+      const logoRow = data.find((r) => r.key === "app_logo_url");
+      if (overlayRow?.value) setActiveOverlayUrl(overlayRow.value);
+      if (logoRow) setAppLogoUrl(logoRow.value || "");
     }
   }, []);
 
   useEffect(() => {
-    fetchGlobalOverlay();
-  }, [fetchGlobalOverlay]);
+    fetchGlobalSettings();
+  }, [fetchGlobalSettings]);
 
   const canUndo =
     (qcstarView === "studio" && feedbackHistory.past.length > 0) ||
@@ -305,7 +308,7 @@ export default function App() {
   }, [videoUrl]);
 
   if (!currentUser) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return <Login onLoginSuccess={handleLoginSuccess} logoUrl={appLogoUrl} />;
   }
 
   const loadEpisodeIntoPlayer = (ep) => {
@@ -478,7 +481,23 @@ export default function App() {
     <main className="qc-app">
       <header className="app-header">
         <div className="brand">
-          <div className="brand-icon">G</div>
+          {appLogoUrl ? (
+            <img
+              src={appLogoUrl}
+              alt="GyanQC Logo"
+              style={{
+                width: "40px",
+                height: "40px",
+                borderRadius: "10px",
+                objectFit: "contain",
+                backgroundColor: "#ffffff",
+                border: "1px solid #e2e8f0",
+                padding: "2px",
+              }}
+            />
+          ) : (
+            <div className="brand-icon">G</div>
+          )}
           <div>
             <h2>GyanQC</h2>
             <span>
@@ -561,7 +580,7 @@ export default function App() {
                   fontSize: "13px",
                 }}
               >
-                🎨 Video Overlay
+                🎨 Overlay &amp; Logo
               </button>
 
               <button
@@ -620,7 +639,9 @@ export default function App() {
       {showOverlayModal && (
         <OverlaySettingsModal
           currentOverlayUrl={activeOverlayUrl}
-          onSaved={(newUrl) => setActiveOverlayUrl(newUrl)}
+          currentLogoUrl={appLogoUrl}
+          onSavedOverlay={(newUrl) => setActiveOverlayUrl(newUrl)}
+          onSavedLogo={(newLogo) => setAppLogoUrl(newLogo)}
           onClose={() => setShowOverlayModal(false)}
         />
       )}
