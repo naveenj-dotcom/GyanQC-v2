@@ -1281,7 +1281,20 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             </div>
 
             <div className="video-stage" style={{ minHeight: '360px', marginBottom: '12px' }}>
-              <div className="video-frame-wrapper" style={{ maxHeight: '55vh' }}>
+              <div
+                className="video-frame-wrapper"
+                style={
+                  previewMode === 'adaptive'
+                    ? {
+                        width: 'calc(55vh * 9 / 16)',
+                        height: '55vh',
+                        maxWidth: '100%',
+                        margin: '0 auto',
+                        overflow: 'hidden',
+                      }
+                    : { maxHeight: '55vh', margin: '0 auto' }
+                }
+              >
                 {previewMode === 'adaptive' ? (
                   <iframe
                     key={previewEp.drive_file_id}
@@ -1289,8 +1302,9 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                     title={`Ep ${previewEp.episode_number}`}
                     allow="autoplay; fullscreen"
                     style={{
-                      width: '100%',
+                      width: '104%',
                       height: '55vh',
+                      flexShrink: 0,
                       border: 'none',
                       backgroundColor: '#000000',
                       display: 'block',

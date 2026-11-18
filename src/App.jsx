@@ -1095,22 +1095,52 @@ export default function App() {
 
               <div ref={stageRef} className="video-stage">
                 {videoUrl ? (
-                  <div className="video-frame-wrapper" style={{ aspectRatio: "9 / 16", height: "100%", maxHeight: "100%" }}>
+                  <div
+                    className="video-frame-wrapper"
+                    style={
+                      activeDriveId && playbackMode === "adaptive"
+                        ? {
+                            width: isMobile ? "calc(36vh * 9 / 16)" : "calc(68vh * 9 / 16)",
+                            height: isMobile ? "36vh" : "68vh",
+                            maxWidth: "100%",
+                            margin: "0 auto",
+                          }
+                        : {
+                            aspectRatio: "9 / 16",
+                            maxHeight: isMobile ? "36vh" : "68vh",
+                            margin: "0 auto",
+                          }
+                    }
+                  >
                     {activeDriveId && playbackMode === "adaptive" ? (
-                      <iframe
-                        key={activeDriveId}
-                        src={`https://drive.google.com/file/d/${activeDriveId}/preview`}
-                        title={videoName || "Google Drive Video"}
-                        allow="autoplay; fullscreen"
+                      <div
                         style={{
                           width: "100%",
                           height: "100%",
-                          border: "none",
+                          overflow: "hidden",
+                          position: "relative",
                           backgroundColor: "#000000",
-                          display: "block",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
                         }}
-                        onLoad={() => setIsBuffering(false)}
-                      />
+                      >
+                        <iframe
+                          key={activeDriveId}
+                          src={`https://drive.google.com/file/d/${activeDriveId}/preview`}
+                          title={videoName || "Google Drive Video"}
+                          allow="autoplay; fullscreen"
+                          style={{
+                            width: "104%",
+                            height: "100%",
+                            border: "none",
+                            backgroundColor: "#000000",
+                            display: "block",
+                            flexShrink: 0,
+                          }}
+                          onLoad={() => setIsBuffering(false)}
+                        />
+                      </div>
                     ) : (
                       <video
                         ref={videoRef}
