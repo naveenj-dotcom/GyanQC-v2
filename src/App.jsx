@@ -128,6 +128,8 @@ export default function App() {
   const [videoName, setVideoName] = useState("");
   const [driveUrl, setDriveUrl] = useState("");
   const [driveError, setDriveError] = useState("");
+  const [activeDriveId, setActiveDriveId] = useState("");
+  const [playbackMode, setPlaybackMode] = useState("adaptive"); // "adaptive" (instant low->HD) | "direct" (timestamp sync)
   const [isBuffering, setIsBuffering] = useState(false);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
@@ -245,6 +247,31 @@ export default function App() {
       };
     });
   }, [qcstarView, feedbackHistory.future.length]);
+
+  // Background pre-warm previous & next episodes so ▲ / ▼ switching is smooth
+  useEffect(() => {
+    if (!activeEpisode || !Array.isArray(showEpisodes) || showEpisodes.length < 2) return;
+    const submitted = [...showEpisodes]
+      .filter((ep) => Boolean(ep.drive_file_id))
+      .sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0));
+    const idx = submitted.findIndex((ep) => ep.id === activeEpisode.id);
+    if (idx === -1) return;
+
+    const neighbors = [submitted[idx - 1], submitted[idx + 1]].filter(Boolean);
+    const createdLinks = [];
+    neighbors.forEach((ep) => {
+      const link = document.createElement("link");
+      link.rel = "prefetch";
+      link.as = "video";
+      link.href = `${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`;
+      document.head.appendChild(link);
+      createdLinks.push(link);
+    });
+
+    return () => {
+      createdLinks.forEach((l) => l.remove());
+    };
+  }, [activeEpisode, showEpisodes]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -389,6 +416,8 @@ export default function App() {
     setIsBuffering(true);
     lastSecondRef.current = -1;
     setActiveEpisode(ep);
+    setActiveDriveId(ep.drive_file_id);
+    setPlaybackMode("adaptive");
     setVideoUrl(`${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`);
     setVideoName(`Ep ${ep.episode_number}: ${ep.ep_name || "Untitled"}`);
     setCurrentTime(0);
@@ -451,6 +480,8 @@ export default function App() {
     }
 
     setActiveEpisode(null);
+    setActiveDriveId("");
+    setPlaybackMode("direct");
     setDriveError("");
     setIsBuffering(false);
     lastSecondRef.current = -1;
@@ -478,6 +509,8 @@ export default function App() {
 
     const fileId = match[1];
     setActiveEpisode(null);
+    setActiveDriveId(fileId);
+    setPlaybackMode("adaptive");
     setIsBuffering(true);
     lastSecondRef.current = -1;
     setVideoUrl(`${VIDEO_PROXY_URL}?id=${fileId}`);
@@ -590,6 +623,17 @@ export default function App() {
   };
 
   const jumpToTime = (time) => {
+    if (activeDriveId && playbackMode === "adaptive") {
+      setPlaybackMode("direct");
+      setTimeout(() => {
+        if (!videoRef.current) return;
+        videoRef.current.currentTime = time;
+        lastSecondRef.current = Math.floor(time);
+        setCurrentTime(time);
+        videoRef.current.play().catch(() => {});
+      }, 250);
+      return;
+    }
     if (!videoRef.current) return;
     videoRef.current.currentTime = time;
     lastSecondRef.current = Math.floor(time);
@@ -607,6 +651,8 @@ export default function App() {
 
   const openStudioClean = () => {
     setActiveEpisode(null);
+    setActiveDriveId("");
+    setPlaybackMode("adaptive");
     setVideoUrl("");
     setVideoName("");
     setDriveUrl("");
@@ -989,6 +1035,31 @@ export default function App() {
                     </form>
                   )}
 
+                  {activeDriveId && (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() =>
+                        setPlaybackMode((m) => (m === "adaptive" ? "direct" : "adaptive"))
+                      }
+                      title={
+                        playbackMode === "adaptive"
+                          ? "Instant Adaptive Stream (starts low quality, upgrades to HD in background). Click to switch to Frame-Exact timestamp player."
+                          : "Frame-Exact Direct Player (for exact timestamp notes). Click to switch back to Instant Adaptive Stream."
+                      }
+                      style={{
+                        padding: "4px 9px",
+                        fontSize: "11px",
+                        fontWeight: "700",
+                        backgroundColor: playbackMode === "adaptive" ? "#ecfdf5" : "#eff6ff",
+                        borderColor: playbackMode === "adaptive" ? "#6ee7b7" : "#93c5fd",
+                        color: playbackMode === "adaptive" ? "#065f46" : "#1e3a8a",
+                      }}
+                    >
+                      {playbackMode === "adaptive" ? "⚡ Fast Stream" : "🎯 Frame-Exact"}
+                    </button>
+                  )}
+
                   <button
                     className="secondary-button"
                     type="button"
@@ -1025,39 +1096,56 @@ export default function App() {
               <div ref={stageRef} className="video-stage">
                 {videoUrl ? (
                   <div className="video-frame-wrapper" style={{ aspectRatio: "9 / 16", height: "100%", maxHeight: "100%" }}>
-                    <video
-                      ref={videoRef}
-                      className="review-video"
-                      src={videoUrl}
-                      preload="auto"
-                      controls
-                      playsInline
-                      controlsList="nofullscreen noremoteplayback"
-                      disablePictureInPicture
-                      style={{
-                        transform: "translateZ(0)",
-                        willChange: "transform",
-                      }}
-                      onWaiting={() => setIsBuffering(true)}
-                      onCanPlay={() => setIsBuffering(false)}
-                      onPlaying={() => setIsBuffering(false)}
-                      onTimeUpdate={() => {
-                        const t = videoRef.current?.currentTime || 0;
-                        const wholeSecond = Math.floor(t);
-                        if (wholeSecond !== lastSecondRef.current) {
-                          lastSecondRef.current = wholeSecond;
-                          setCurrentTime(t);
-                        }
-                      }}
-                      onError={() => {
-                        setIsBuffering(false);
-                        if (videoUrl.startsWith(VIDEO_PROXY_URL)) {
-                          setDriveError(
-                            "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
-                          );
-                        }
-                      }}
-                    />
+                    {activeDriveId && playbackMode === "adaptive" ? (
+                      <iframe
+                        key={activeDriveId}
+                        src={`https://drive.google.com/file/d/${activeDriveId}/preview`}
+                        title={videoName || "Google Drive Video"}
+                        allow="autoplay; fullscreen"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          border: "none",
+                          backgroundColor: "#000000",
+                          display: "block",
+                        }}
+                        onLoad={() => setIsBuffering(false)}
+                      />
+                    ) : (
+                      <video
+                        ref={videoRef}
+                        className="review-video"
+                        src={videoUrl}
+                        preload="metadata"
+                        controls
+                        playsInline
+                        controlsList="nofullscreen noremoteplayback"
+                        disablePictureInPicture
+                        style={{
+                          transform: "translateZ(0)",
+                          willChange: "transform",
+                        }}
+                        onWaiting={() => setIsBuffering(true)}
+                        onCanPlay={() => setIsBuffering(false)}
+                        onPlaying={() => setIsBuffering(false)}
+                        onTimeUpdate={() => {
+                          const t = videoRef.current?.currentTime || 0;
+                          const wholeSecond = Math.floor(t);
+                          if (wholeSecond !== lastSecondRef.current) {
+                            lastSecondRef.current = wholeSecond;
+                            setCurrentTime(t);
+                          }
+                        }}
+                        onError={() => {
+                          setIsBuffering(false);
+                          if (videoUrl.startsWith(VIDEO_PROXY_URL)) {
+                            setDriveError(
+                              "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
+                            );
+                          }
+                        }}
+                      />
+                    )}
 
                     <div className="overlay-frame-layer">
                       <ReferenceOverlay

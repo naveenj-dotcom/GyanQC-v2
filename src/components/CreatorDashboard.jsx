@@ -84,6 +84,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
   const [previewEp, setPreviewEp] = useState(null);
   const [showOverlay, setShowOverlay] = useState(true);
+  const [previewMode, setPreviewMode] = useState('adaptive'); // 'adaptive' | 'direct'
   const [previewError, setPreviewError] = useState('');
   const videoRef = useRef(null);
 
@@ -226,7 +227,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
       .maybeSingle();
 
     if (epRow) {
-      setPreviewError('');
+      setPreviewError(''); setPreviewMode('adaptive');
       setPreviewEp(epRow);
     }
   };
@@ -590,7 +591,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                           <button
                             type="button"
                             onClick={() => {
-                              setPreviewError('');
+                              setPreviewError(''); setPreviewMode('adaptive');
                               setPreviewEp(ep);
                             }}
                             className="secondary-button"
@@ -805,7 +806,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                             <button
                               type="button"
                               onClick={() => {
-                                setPreviewError('');
+                                setPreviewError(''); setPreviewMode('adaptive');
                                 setPreviewEp(ep);
                               }}
                               className="secondary-button"
@@ -1030,7 +1031,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
           styles={styles}
           getCreatorStatusBadge={getCreatorStatusBadge}
           onPreviewEpisode={(ep) => {
-            setPreviewError('');
+            setPreviewError(''); setPreviewMode('adaptive');
             setPreviewEp(ep);
           }}
         />
@@ -1239,7 +1240,21 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                 </span>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  onClick={() => setPreviewMode((m) => (m === 'adaptive' ? 'direct' : 'adaptive'))}
+                  className="secondary-button"
+                  style={{
+                    fontSize: '12px',
+                    fontWeight: '700',
+                    backgroundColor: previewMode === 'adaptive' ? '#ecfdf5' : '#eff6ff',
+                    borderColor: previewMode === 'adaptive' ? '#6ee7b7' : '#93c5fd',
+                    color: previewMode === 'adaptive' ? '#065f46' : '#1e3a8a',
+                  }}
+                >
+                  {previewMode === 'adaptive' ? '⚡ Fast Stream' : '🎯 Timestamp Sync'}
+                </button>
                 <button
                   type="button"
                   onClick={() => setShowOverlay((v) => !v)}
@@ -1267,19 +1282,36 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
             <div className="video-stage" style={{ minHeight: '360px', marginBottom: '12px' }}>
               <div className="video-frame-wrapper" style={{ maxHeight: '55vh' }}>
-                <video
-                  ref={videoRef}
-                  src={`${VIDEO_PROXY_URL}?id=${previewEp.drive_file_id}`}
-                  controls
-                  playsInline
-                  className="review-video"
-                  style={{ maxHeight: '55vh' }}
-                  onError={() =>
-                    setPreviewError(
-                      'Could not stream video. Check that Google Drive access is set to "Anyone with the link".'
-                    )
-                  }
-                />
+                {previewMode === 'adaptive' ? (
+                  <iframe
+                    key={previewEp.drive_file_id}
+                    src={`https://drive.google.com/file/d/${previewEp.drive_file_id}/preview`}
+                    title={`Ep ${previewEp.episode_number}`}
+                    allow="autoplay; fullscreen"
+                    style={{
+                      width: '100%',
+                      height: '55vh',
+                      border: 'none',
+                      backgroundColor: '#000000',
+                      display: 'block',
+                    }}
+                  />
+                ) : (
+                  <video
+                    ref={videoRef}
+                    src={`${VIDEO_PROXY_URL}?id=${previewEp.drive_file_id}`}
+                    preload="metadata"
+                    controls
+                    playsInline
+                    className="review-video"
+                    style={{ maxHeight: '55vh' }}
+                    onError={() =>
+                      setPreviewError(
+                        'Could not stream video. Check that Google Drive access is set to "Anyone with the link".'
+                      )
+                    }
+                  />
+                )}
                 <div className="overlay-frame-layer">
                   <ReferenceOverlay
                     src={overlayUrl || '/default-overlay.png'}
@@ -1321,6 +1353,16 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                       <button
                         type="button"
                         onClick={() => {
+                          if (previewMode === 'adaptive') {
+                            setPreviewMode('direct');
+                            setTimeout(() => {
+                              if (videoRef.current) {
+                                videoRef.current.currentTime = fb.time;
+                                videoRef.current.play().catch(() => {});
+                              }
+                            }, 250);
+                            return;
+                          }
                           if (videoRef.current) {
                             videoRef.current.currentTime = fb.time;
                             videoRef.current.play().catch(() => {});
