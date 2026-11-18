@@ -1288,7 +1288,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                   <video
                     ref={videoRef}
                     src={getStreamUrl(previewEp.drive_file_id)}
-                    preload="metadata"
+                    preload="auto"
                     controls
                     playsInline
                     className="review-video"
