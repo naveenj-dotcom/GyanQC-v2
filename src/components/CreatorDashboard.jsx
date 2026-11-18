@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import ReferenceOverlay from '../ReferenceOverlay';
 import CreatorNotificationBell from './CreatorNotificationBell';
 import CreatorMonthlyReport from './CreatorMonthlyReport';
+import ShowSearchSelect from './ShowSearchSelect';
 
 const VIDEO_PROXY_URL = 'https://gyanqc-video-proxy.naveenj.workers.dev';
 
@@ -418,23 +419,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
               onOpenEpisode={handleOpenNotificationEpisode}
             />
 
-            {sortedShows.length > 1 && (
-              <select
-                aria-label="Active Show"
-                value={selectedShow?.id || ''}
-                onChange={(e) => {
-                  const nextShow = sortedShows.find((s) => s.id === e.target.value);
-                  if (nextShow) setSelectedShow(nextShow);
-                }}
-                style={styles.showSelect}
-              >
-                {sortedShows.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.show_name}
-                  </option>
-                ))}
-              </select>
-            )}
+            <ShowSearchSelect shows={sortedShows} selectedShow={selectedShow} onSelectShow={(nextShow) => setSelectedShow(nextShow)} />
           </div>
         </div>
       </div>
