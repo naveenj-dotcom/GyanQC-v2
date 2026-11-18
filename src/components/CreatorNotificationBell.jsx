@@ -29,7 +29,6 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
 
   const creatorEmail = (currentUser?.email || '').trim().toLowerCase();
 
-  // Sync today's scheduled targets into qc_notifications for this Creator & load bell items
   const syncAndLoadNotifications = async () => {
     if (!creatorEmail) return;
 
@@ -79,7 +78,6 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
     if (list) setNotifications(list);
   };
 
-  // Check if this browser/device is already subscribed to Web Push
   const checkExistingSubscription = async () => {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
     try {
@@ -168,11 +166,23 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
           episodeLabel: 'Ep 1',
         }),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text.slice(0, 160));
+      }
+      if (!res.ok) {
+        throw new Error(data.error || `Server error ${res.status}`);
+      }
       if (data.ok && data.sentDevices > 0) {
         alert(`Test notification sent to ${data.sentDevices} device(s)! Check your OS notification banner.`);
       } else {
-        alert('Click "Enable Laptop/Phone Alerts" first so this device is registered.');
+        alert(
+          data.errors?.[0] ||
+            'Click "Enable Laptop/Phone Alerts" first so this device is registered.'
+        );
       }
     } catch (err) {
       alert('Test push failed: ' + err.message);
@@ -231,7 +241,6 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
             )}
           </div>
 
-          {/* Push Enable / Test Banner */}
           <div style={bellStyles.pushBar}>
             {!pushEnabled ? (
               <button
@@ -261,7 +270,6 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
             )}
           </div>
 
-          {/* Notification Items List */}
           <div style={bellStyles.listContainer}>
             {notifications.length === 0 ? (
               <div style={bellStyles.emptyState}>
