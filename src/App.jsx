@@ -1096,8 +1096,7 @@ export default function App() {
                 {videoUrl ? (
                   <div className="video-frame-wrapper" style={{ aspectRatio: "9 / 16", height: "100%", maxHeight: "100%" }}>
                     {streamMode === "adaptive" && activeEpisode?.drive_file_id ? (
-                      <iframe
-                        key={`${activeEpisode.drive_file_id}-${adaptiveSeekSec}`}
+                      <iframe className="adaptive-drive-frame" key={`${activeEpisode.drive_file_id}-${adaptiveSeekSec}`}
                         src={getAdaptiveDriveUrl(activeEpisode.drive_file_id, adaptiveSeekSec)}
                         title={videoName || "Episode Preview"}
                         allow="autoplay; fullscreen"

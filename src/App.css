@@ -741,3 +741,43 @@
     max-height: 36vh !important;
   }
 }
+
+/* Exact centered 9:16 video stage + flush safe-zone wrapper */
+.video-stage {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+.video-frame-wrapper {
+  position: relative !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+  margin: 0 auto !important;
+  aspect-ratio: 9 / 16 !important;
+  height: 68vh !important;
+  max-height: 68vh !important;
+  width: auto !important;
+  max-width: 100% !important;
+  background: #000 !important;
+  overflow: hidden !important;
+}
+
+.video-frame-wrapper > video.review-video,
+.video-frame-wrapper > iframe.adaptive-drive-frame {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+  border: 0 !important;
+}
+
+@media (max-width: 768px) {
+  .video-frame-wrapper {
+    height: 62vh !important;
+    max-height: 62vh !important;
+  }
+}

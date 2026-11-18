@@ -1269,8 +1269,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             <div className="video-stage" style={{ minHeight: '360px', marginBottom: '12px' }}>
               <div className="video-frame-wrapper" style={{ height: "55vh", maxHeight: "55vh", width: "auto", aspectRatio: "9 / 16", margin: "0 auto" }}>
                 {creatorStreamMode === "adaptive" ? (
-                  <iframe
-                    key={`${previewEp.drive_file_id}-${creatorSeekSec}`}
+                  <iframe className="adaptive-drive-frame" key={`${previewEp.drive_file_id}-${creatorSeekSec}`}
                     src={getAdaptiveDriveUrl(previewEp.drive_file_id, creatorSeekSec)}
                     title={`Ep ${previewEp.episode_number}`}
                     allow="autoplay; fullscreen"
