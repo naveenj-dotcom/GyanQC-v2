@@ -41,11 +41,11 @@ function generateCreatorCode() {
 
 export default function QcstarPortal({
   activeTab,
-  isCreatorsView,
+  subView,
   onNavigate,
   shows,
   onShowCreated,
-  onShowEnded,
+  onShowsUpdated,
   onOpenEpisodeInStudio,
   onOpenMonthlyPlanner,
   currentUser,
@@ -64,8 +64,7 @@ export default function QcstarPortal({
   // Calendar Approved Video Quick-Download Modal
   const [selectedApprovedModal, setSelectedApprovedModal] = useState(null);
 
-  // Tab 2: Shows -> Active vs Ended filter + Pending QC & Approved Videos Drilldown
-  const [showsListFilter, setShowsListFilter] = useState('active'); // 'active' | 'ended'
+  // Tab 2: Active Shows Queue Drilldown (Pending QC & Approved Drive Links)
   const [selectedShowForQueue, setSelectedShowForQueue] = useState(null);
   const [queueSubTab, setQueueSubTab] = useState('pending'); // 'pending' | 'approved'
   const [pendingVideos, setPendingVideos] = useState([]);
@@ -73,7 +72,14 @@ export default function QcstarPortal({
   const [loadingQueue, setLoadingQueue] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
-  // End / Reopen Show Confirmation Popup state
+  // Manage Shows Page state (List, Edit Show Name, Edit Creator ID, End/Reopen Show)
+  const [manageShowSearch, setManageShowSearch] = useState('');
+  const [editingShowObj, setEditingShowObj] = useState(null);
+  const [editShowNameValue, setEditShowNameValue] = useState('');
+  const [editShowCreatorIdValue, setEditShowCreatorIdValue] = useState('');
+  const [savingShowEdit, setSavingShowEdit] = useState(false);
+
+  // End / Reopen Show Confirmation Popup state (inside Manage Shows page)
   const [showToEnd, setShowToEnd] = useState(null);
   const [endingShow, setEndingShow] = useState(false);
   const [reopeningId, setReopeningId] = useState(null);
@@ -83,6 +89,7 @@ export default function QcstarPortal({
   const [loadingCreators, setLoadingCreators] = useState(false);
   const [creatorSearch, setCreatorSearch] = useState('');
   const [copiedTableCreatorId, setCopiedTableCreatorId] = useState(null);
+  const [removingCreatorId, setRemovingCreatorId] = useState(null);
 
   // Create New Creator Modal state
   const [creatorModalOpen, setCreatorModalOpen] = useState(false);
@@ -92,10 +99,9 @@ export default function QcstarPortal({
   const [generatedCreator, setGeneratedCreator] = useState(null);
   const [copiedCreatorId, setCopiedCreatorId] = useState(false);
 
-  // Create New Show Popup state
+  // Create New Show Modal state (inside Manage Shows page, no description field)
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newShowName, setNewShowName] = useState('');
-  const [newShowDescription, setNewShowDescription] = useState('');
   const [linkCreatorId, setLinkCreatorId] = useState('');
   const [creatingShow, setCreatingShow] = useState(false);
 
@@ -107,7 +113,6 @@ export default function QcstarPortal({
   });
 
   const activeShows = sortedShows.filter((s) => s.status !== 'ended');
-  const endedShows = sortedShows.filter((s) => s.status === 'ended');
 
   const fetchCreators = async () => {
     setLoadingCreators(true);
@@ -189,7 +194,7 @@ export default function QcstarPortal({
     setLoadingQueue(false);
   };
 
-  // Any QCstar can end ANY active show regardless of who created it
+  // End an active Show (inside Manage Shows page)
   const handleConfirmEndShow = async () => {
     if (!showToEnd) return;
     setEndingShow(true);
@@ -214,11 +219,11 @@ export default function QcstarPortal({
       }
       setShowToEnd(null);
       alert(`Show "${endedName}" has been ended.`);
-      if (onShowEnded) onShowEnded();
+      if (onShowsUpdated) onShowsUpdated();
     }
   };
 
-  // Any QCstar can also reopen an ended show if needed
+  // Reopen an ended Show (inside Manage Shows page)
   const handleReopenShow = async (showObj) => {
     if (!window.confirm(`Reopen "${showObj.show_name}" and restore it to Active Shows?`)) {
       return;
@@ -237,8 +242,51 @@ export default function QcstarPortal({
       alert('Could not reopen show due to database permissions.');
     } else {
       alert(`Show "${showObj.show_name}" is active again.`);
-      if (onShowEnded) onShowEnded();
+      if (onShowsUpdated) onShowsUpdated();
     }
+  };
+
+  // Remove Creator ONLY — preserves all linked Shows so a new Creator ID can be linked later
+  const handleRemoveCreator = async (creatorObj, linkedCount) => {
+    const confirmMsg =
+      linkedCount > 0
+        ? `Remove Creator "${creatorObj.creator_name}" (${creatorObj.creator_id})?\n\nTheir ${linkedCount} ${
+            linkedCount === 1 ? 'Show' : 'Shows'
+          } will NOT be removed—they will remain in Shows so you can link a new Creator ID anytime.`
+        : `Remove Creator "${creatorObj.creator_name}" (${creatorObj.creator_id})?`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setRemovingCreatorId(creatorObj.id);
+
+    const { error } = await supabase
+      .from('qc_creators')
+      .delete()
+      .eq('id', creatorObj.id);
+
+    if (error) {
+      setRemovingCreatorId(null);
+      alert('Error removing Creator: ' + error.message);
+      return;
+    }
+
+    // Unassign Creator ID from existing Shows without deleting the Shows
+    if (linkedCount > 0) {
+      await supabase
+        .from('qc_shows')
+        .update({
+          creator_id: 'UNASSIGNED',
+          show_id: 'UNASSIGNED',
+          creator_name: 'Unassigned',
+          creator_email: '',
+        })
+        .ilike('creator_id', creatorObj.creator_id);
+
+      if (onShowsUpdated) onShowsUpdated();
+    }
+
+    setRemovingCreatorId(null);
+    setCreatorsList((prev) => prev.filter((item) => item.id !== creatorObj.id));
   };
 
   // Create New Creator & Generate Unique Creator ID
@@ -250,7 +298,6 @@ export default function QcstarPortal({
 
     setCreatingCreator(true);
 
-    // Check if creator email already exists
     const { data: existingCreator } = await supabase
       .from('qc_creators')
       .select('*')
@@ -264,7 +311,6 @@ export default function QcstarPortal({
       return;
     }
 
-    // Generate a unique Creator ID (retry if collision)
     let createdRecord = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       const candidateId = generateCreatorCode();
@@ -307,7 +353,53 @@ export default function QcstarPortal({
     (c) => c.creator_id.toUpperCase() === linkCreatorId.trim().toUpperCase()
   );
 
-  // Create New Show connected to Creator ID
+  // Live match of entered Creator ID inside Edit Show modal
+  const matchedEditCreator = creatorsList.find(
+    (c) => c.creator_id.toUpperCase() === editShowCreatorIdValue.trim().toUpperCase()
+  );
+
+  // Save edited Show Name & Creator ID
+  const handleSaveShowEdit = async (e) => {
+    e.preventDefault();
+    if (!editingShowObj) return;
+
+    const cleanName = editShowNameValue.trim();
+    if (!cleanName) {
+      alert('Show Name cannot be empty.');
+      return;
+    }
+
+    if (!matchedEditCreator) {
+      alert('Please enter a valid Creator ID from your Creators list.');
+      return;
+    }
+
+    setSavingShowEdit(true);
+    const { error } = await supabase
+      .from('qc_shows')
+      .update({
+        show_name: cleanName,
+        creator_id: matchedEditCreator.creator_id,
+        show_id: matchedEditCreator.creator_id,
+        creator_name: matchedEditCreator.creator_name,
+        creator_email: matchedEditCreator.creator_email,
+        agency_name: matchedEditCreator.creator_name,
+      })
+      .eq('id', editingShowObj.id);
+
+    setSavingShowEdit(false);
+    if (error) {
+      alert('Error updating Show: ' + error.message);
+    } else {
+      setEditingShowObj(null);
+      if (onShowsUpdated) onShowsUpdated();
+      alert(
+        `Updated "${cleanName}" (${matchedEditCreator.creator_name} · ${matchedEditCreator.creator_id})!`
+      );
+    }
+  };
+
+  // Create New Show connected to Creator ID (no description field)
   const handleCreateShowSubmit = async (e) => {
     e.preventDefault();
 
@@ -323,7 +415,6 @@ export default function QcstarPortal({
       .insert([
         {
           show_name: newShowName.trim(),
-          description: newShowDescription.trim(),
           creator_id: matchedCreator.creator_id,
           creator_name: matchedCreator.creator_name,
           creator_email: matchedCreator.creator_email,
@@ -357,10 +448,8 @@ export default function QcstarPortal({
 
     setCreatingShow(false);
     setNewShowName('');
-    setNewShowDescription('');
     setLinkCreatorId('');
     setShowCreateModal(false);
-    onNavigate('shows');
     alert(
       `Show "${createdShow.show_name}" created and linked to ${matchedCreator.creator_name} (${matchedCreator.creator_id})!`
     );
@@ -428,7 +517,7 @@ export default function QcstarPortal({
       .filter((item) => (item.schedule_date || '').startsWith(selectedMonth))
       .map((item) => {
         const showObj = activeShows.find((s) => s.id === item.show_uuid);
-        if (!showObj) return null; // Hide ended shows
+        if (!showObj) return null;
 
         const epMatch = (item.episode_label || '').match(/ep\s*(\d+)/i);
         const epNum = epMatch ? parseInt(epMatch[1], 10) : null;
@@ -663,9 +752,8 @@ export default function QcstarPortal({
     );
   }
 
-  // TAB 2: SHOWS & CREATORS DIRECTORY
+  // TAB 2: SHOWS, CREATORS & MANAGE SHOWS
   if (activeTab === 'shows') {
-    const displayedShows = showsListFilter === 'active' ? activeShows : endedShows;
     const filteredCreators = creatorsList.filter((c) => {
       const q = creatorSearch.trim().toLowerCase();
       if (!q) return true;
@@ -676,9 +764,19 @@ export default function QcstarPortal({
       );
     });
 
+    const filteredManagedShows = sortedShows.filter((s) => {
+      const q = manageShowSearch.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        (s.show_name || '').toLowerCase().includes(q) ||
+        (s.creator_name || '').toLowerCase().includes(q) ||
+        (s.creator_id || s.show_id || '').toLowerCase().includes(q)
+      );
+    });
+
     return (
-      <div style={{ maxWidth: '1040px', margin: '0 auto', padding: '20px' }}>
-        {isCreatorsView ? (
+      <div style={{ maxWidth: '1060px', margin: '0 auto', padding: '20px' }}>
+        {subView === 'creators' ? (
           /* CREATORS DIRECTORY PAGE */
           <div className="panel">
             <div className="panel-heading">
@@ -689,11 +787,11 @@ export default function QcstarPortal({
                   className="secondary-button"
                   style={{ marginBottom: '10px', padding: '5px 10px', fontSize: '12px' }}
                 >
-                  ← Back to All Shows
+                  ← Back to Active Shows
                 </button>
                 <h3>Creators Directory ({creatorsList.length})</h3>
                 <p>
-                  All registered Creators, their Login Email, and unique Creator IDs for linking Shows.
+                  All registered Creators, their Login Email, and unique Creator IDs.
                 </p>
               </div>
 
@@ -714,7 +812,7 @@ export default function QcstarPortal({
             <div style={{ marginBottom: '16px' }}>
               <input
                 type="text"
-                placeholder="Search by Creator Name, Email, or Creator ID (e.g. CR-9531)..."
+                placeholder="Search by Creator Name, Email, or Creator ID..."
                 value={creatorSearch}
                 onChange={(e) => setCreatorSearch(e.target.value)}
                 style={{ ...styles.input, maxWidth: '420px' }}
@@ -744,6 +842,7 @@ export default function QcstarPortal({
                       <th style={styles.th}>Creator ID</th>
                       <th style={styles.th}>Linked Shows</th>
                       <th style={styles.th}>Action</th>
+                      <th style={styles.th}>Remove</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -795,6 +894,165 @@ export default function QcstarPortal({
                               + Create Show
                             </button>
                           </td>
+                          <td style={styles.td}>
+                            <button
+                              type="button"
+                              disabled={removingCreatorId === c.id}
+                              onClick={() => handleRemoveCreator(c, linkedCount)}
+                              style={styles.removeCreatorBtn}
+                            >
+                              {removingCreatorId === c.id ? 'Removing...' : 'Remove'}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : subView === 'manage-shows' ? (
+          /* MANAGE SHOWS PAGE (List of all Shows, Edit Show Name, Edit Creator ID, End/Reopen Show, + Create New Show) */
+          <div className="panel">
+            <div className="panel-heading">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate('shows')}
+                  className="secondary-button"
+                  style={{ marginBottom: '10px', padding: '5px 10px', fontSize: '12px' }}
+                >
+                  ← Back to Active Shows
+                </button>
+                <h3>Shows Management ({sortedShows.length})</h3>
+                <p>
+                  Create a Show, edit Show Names, link or change Creator IDs, or end active Shows.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  fetchCreators();
+                  setNewShowName('');
+                  setLinkCreatorId('');
+                  setShowCreateModal(true);
+                }}
+                className="primary-button"
+              >
+                + Create New Show
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '16px' }}>
+              <input
+                type="text"
+                placeholder="Search by Show Name, Creator Name, or Creator ID..."
+                value={manageShowSearch}
+                onChange={(e) => setManageShowSearch(e.target.value)}
+                style={{ ...styles.input, maxWidth: '420px' }}
+              />
+            </div>
+
+            {filteredManagedShows.length === 0 ? (
+              <div style={styles.emptyBox}>
+                <strong>No Shows found.</strong>
+                <span>Click <strong>+ Create New Show</strong> above to create a Show.</span>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Show Name</th>
+                      <th style={styles.th}>Creator Name</th>
+                      <th style={styles.th}>Creator ID</th>
+                      <th style={styles.th}>Status</th>
+                      <th style={styles.th}>Edit</th>
+                      <th style={styles.th}>End / Reopen</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredManagedShows.map((s) => {
+                      const isEnded = s.status === 'ended';
+                      const displayCreatorId = s.creator_id || s.show_id || 'UNASSIGNED';
+                      const isUnassigned = displayCreatorId === 'UNASSIGNED';
+
+                      return (
+                        <tr key={s.id} style={styles.tr}>
+                          <td style={styles.td}>
+                            <strong>{s.show_name}</strong>
+                          </td>
+                          <td style={styles.td}>
+                            {isUnassigned ? (
+                              <span style={{ color: '#b45309', fontWeight: '600' }}>Unassigned</span>
+                            ) : (
+                              s.creator_name
+                            )}
+                          </td>
+                          <td style={styles.td}>
+                            <code
+                              style={
+                                isUnassigned
+                                  ? styles.unassignedCodeBadge
+                                  : styles.creatorCodeBadge
+                              }
+                            >
+                              {displayCreatorId}
+                            </code>
+                          </td>
+                          <td style={styles.td}>
+                            <span
+                              style={{
+                                padding: '3px 9px',
+                                borderRadius: '999px',
+                                fontSize: '11px',
+                                fontWeight: '700',
+                                backgroundColor: isEnded ? '#fee2e2' : '#dcfce7',
+                                color: isEnded ? '#b91c1c' : '#166534',
+                              }}
+                            >
+                              {isEnded ? 'Ended' : 'Active'}
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                fetchCreators();
+                                setEditingShowObj(s);
+                                setEditShowNameValue(s.show_name || '');
+                                setEditShowCreatorIdValue(
+                                  isUnassigned ? '' : displayCreatorId
+                                );
+                              }}
+                              className="secondary-button"
+                              style={{ padding: '6px 12px', fontSize: '12px', fontWeight: '700' }}
+                            >
+                              ✎ Edit
+                            </button>
+                          </td>
+                          <td style={styles.td}>
+                            {isEnded ? (
+                              <button
+                                type="button"
+                                disabled={reopeningId === s.id}
+                                onClick={() => handleReopenShow(s)}
+                                style={styles.reopenShowBtnTable}
+                              >
+                                {reopeningId === s.id ? 'Reopening...' : '↻ Reopen'}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setShowToEnd(s)}
+                                style={styles.removeCreatorBtn}
+                              >
+                                End Show
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -804,13 +1062,13 @@ export default function QcstarPortal({
             )}
           </div>
         ) : !selectedShowForQueue ? (
-          /* ALL SHOWS PAGE */
+          /* CLEAN ACTIVE SHOWS PAGE (Only Active Shows, Creator Name, Pending QC, Approved Drive Links) */
           <div className="panel">
             <div className="panel-heading">
               <div>
-                <h3>All Shows (Latest First)</h3>
+                <h3>Active Shows ({activeShows.length})</h3>
                 <p>
-                  Manage Creators &amp; Creator IDs, or create a Show and link it using a Creator ID.
+                  Select an active Show to review Pending QC videos or download Approved Drive links.
                 </p>
               </div>
 
@@ -832,138 +1090,61 @@ export default function QcstarPortal({
                   type="button"
                   onClick={() => {
                     fetchCreators();
-                    setShowCreateModal(true);
+                    setManageShowSearch('');
+                    onNavigate('manage-shows');
                   }}
                   className="primary-button"
                 >
-                  + Create New Show
+                  Shows ({sortedShows.length})
                 </button>
               </div>
             </div>
 
-            {/* Active vs Ended Shows Toggle */}
-            <div style={styles.subTabBar}>
-              <button
-                type="button"
-                onClick={() => setShowsListFilter('active')}
-                style={
-                  showsListFilter === 'active'
-                    ? styles.subTabActive
-                    : styles.subTabInactive
-                }
-              >
-                Active Shows ({activeShows.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowsListFilter('ended')}
-                style={
-                  showsListFilter === 'ended'
-                    ? styles.subTabActiveRed
-                    : styles.subTabInactive
-                }
-              >
-                Ended Shows ({endedShows.length})
-              </button>
-            </div>
-
-            {displayedShows.length === 0 ? (
+            {activeShows.length === 0 ? (
               <div style={styles.emptyBox}>
-                <strong>
-                  {showsListFilter === 'active'
-                    ? 'No active Shows found.'
-                    : 'No ended Shows found.'}
-                </strong>
+                <strong>No active Shows found.</strong>
                 <span>
-                  {showsListFilter === 'active'
-                    ? 'Click "Creators" to get a Creator ID, then click "+ Create New Show".'
-                    : 'Shows ended by any QCstar appear here and can be reopened anytime.'}
+                  Click <strong>Creators</strong> to generate a Creator ID, then click{' '}
+                  <strong>Shows</strong> to create and manage Shows.
                 </span>
               </div>
             ) : (
               <div style={styles.showsListGrid}>
-                {displayedShows.map((s) => {
-                  const isEnded = s.status === 'ended';
-                  const displayCreatorId = s.creator_id || s.show_id;
-                  return (
-                    <div
-                      key={s.id}
-                      onClick={() => handleSelectShowForQueue(s, 'pending')}
-                      style={{
-                        ...styles.showCard,
-                        backgroundColor: isEnded ? '#fef2f2' : '#f8fafc',
-                        borderColor: isEnded ? '#fecaca' : '#e2e8f0',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                        <span style={styles.showIdTag}>Creator ID: {displayCreatorId}</span>
-                        {isEnded ? (
-                          <button
-                            type="button"
-                            disabled={reopeningId === s.id}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleReopenShow(s);
-                            }}
-                            style={styles.reopenShowBtn}
-                          >
-                            {reopeningId === s.id ? 'Reopening...' : '↻ Reopen Show'}
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setShowToEnd(s);
-                            }}
-                            style={styles.endShowBtn}
-                          >
-                            End Show
-                          </button>
-                        )}
-                      </div>
+                {activeShows.map((s) => (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSelectShowForQueue(s, 'pending')}
+                    style={styles.showCard}
+                  >
+                    <h4 style={{ margin: '0 0 6px', fontSize: '18px', color: '#0f172a' }}>
+                      {s.show_name}
+                    </h4>
+                    <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748b' }}>
+                      Creator: <strong>{s.creator_name || 'Unassigned'}</strong>
+                    </p>
 
-                      <h4 style={{ margin: '10px 0 4px', fontSize: '18px', color: '#0f172a' }}>
-                        {s.show_name}
-                      </h4>
-                      {s.description && (
-                        <p style={{ margin: '0 0 6px', fontSize: '12px', color: '#475569', lineHeight: 1.4 }}>
-                          {s.description}
-                        </p>
-                      )}
-                      <p style={{ margin: '0 0 4px', fontSize: '13px', color: '#64748b' }}>
-                        Creator: <strong>{s.creator_name}</strong>
-                        {s.creator_email ? ` (${s.creator_email})` : ''}
-                      </p>
-                      {s.created_by_name && (
-                        <p style={{ margin: '0 0 12px', fontSize: '11px', color: '#64748b' }}>
-                          Created by: <strong>{s.created_by_name}</strong>
-                        </p>
-                      )}
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                        <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: '700' }}>
-                          {isEnded ? 'View Episodes →' : 'Pending QC →'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectShowForQueue(s, 'approved');
-                          }}
-                          style={styles.cardApprovedPillBtn}
-                        >
-                          ✓ Approved Drive Links
-                        </button>
-                      </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '13px', color: '#2563eb', fontWeight: '700' }}>
+                        Pending QC →
+                      </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectShowForQueue(s, 'approved');
+                        }}
+                        style={styles.cardApprovedPillBtn}
+                      >
+                        ✓ Approved Drive Links
+                      </button>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         ) : (
-          /* SHOW QUEUE DRILLDOWN (PENDING QC & APPROVED DRIVE LINKS) */
+          /* SHOW QUEUE DRILLDOWN (PENDING QC & APPROVED DRIVE LINKS — No End Show button here) */
           <div className="panel">
             <div className="panel-heading">
               <div>
@@ -973,32 +1154,13 @@ export default function QcstarPortal({
                   className="secondary-button"
                   style={{ marginBottom: '10px', padding: '5px 10px', fontSize: '12px' }}
                 >
-                  ← Back to All Shows
+                  ← Back to Active Shows
                 </button>
                 <h3>{selectedShowForQueue.show_name}</h3>
                 <p>
-                  Most recent &amp; re-edited videos appear at the top so you never need to scroll.
+                  Creator: <strong>{selectedShowForQueue.creator_name || 'Unassigned'}</strong> · Most recent videos appear at the top.
                 </p>
               </div>
-
-              {selectedShowForQueue.status === 'ended' ? (
-                <button
-                  type="button"
-                  disabled={reopeningId === selectedShowForQueue.id}
-                  onClick={() => handleReopenShow(selectedShowForQueue)}
-                  style={styles.driveDownloadBtn}
-                >
-                  {reopeningId === selectedShowForQueue.id ? 'Reopening...' : '↻ Reopen Show'}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowToEnd(selectedShowForQueue)}
-                  style={styles.endShowBtnLarge}
-                >
-                  End Show
-                </button>
-              )}
             </div>
 
             {/* Sub-Tab Switcher: Pending QC vs Approved Videos */}
@@ -1033,7 +1195,7 @@ export default function QcstarPortal({
               pendingVideos.length === 0 ? (
                 <div style={styles.emptyBox}>
                   <strong>All caught up! No pending videos to QC for {selectedShowForQueue.show_name}.</strong>
-                  <span>New or re-edited submissions from {selectedShowForQueue.creator_name} will appear right at the top.</span>
+                  <span>New or re-edited submissions will appear right at the top.</span>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -1166,7 +1328,7 @@ export default function QcstarPortal({
           </div>
         )}
 
-        {/* Confirmation Popup for Ending a Show */}
+        {/* Confirmation Popup for Ending a Show (triggered from Manage Shows page) */}
         {showToEnd && (
           <div style={modalStyles.overlay} onClick={() => !endingShow && setShowToEnd(null)}>
             <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
@@ -1177,7 +1339,7 @@ export default function QcstarPortal({
                 Are you sure you want to end <strong>{showToEnd.show_name}</strong>?
                 <br />
                 <span style={{ fontSize: '13px', color: '#991b1b' }}>
-                  Once ended, this Show will move to Ended Shows and will no longer appear in the Creator's active dashboard (any QCstar can reopen it later if needed).
+                  Once ended, this Show will be removed from Active Shows (you can reopen it anytime from Shows Management).
                 </span>
               </p>
 
@@ -1199,6 +1361,115 @@ export default function QcstarPortal({
                   {endingShow ? 'Ending Show...' : 'Yes, End Show'}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: Edit Show Name & Creator ID */}
+        {editingShowObj && (
+          <div style={modalStyles.overlay} onClick={() => !savingShowEdit && setEditingShowObj(null)}>
+            <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '19px', color: '#0f172a' }}>
+                    Edit Show Details
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
+                    Update the Show Name or link a different Creator ID.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={savingShowEdit}
+                  onClick={() => setEditingShowObj(null)}
+                  style={{ background: '#f1f5f9', border: 'none', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveShowEdit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={styles.label}>Show Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editShowNameValue}
+                    onChange={(e) => setEditShowNameValue(e.target.value)}
+                    style={styles.input}
+                  />
+                </div>
+
+                <div>
+                  <label style={styles.label}>Creator ID *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. CR-9531"
+                    value={editShowCreatorIdValue}
+                    onChange={(e) => setEditShowCreatorIdValue(e.target.value)}
+                    style={styles.input}
+                  />
+
+                  {editShowCreatorIdValue.trim() && (
+                    <div
+                      style={{
+                        marginTop: '6px',
+                        padding: '8px 10px',
+                        borderRadius: '7px',
+                        fontSize: '12px',
+                        backgroundColor: matchedEditCreator ? '#dcfce7' : '#fee2e2',
+                        color: matchedEditCreator ? '#166534' : '#991b1b',
+                      }}
+                    >
+                      {matchedEditCreator ? (
+                        <>
+                          ✓ Linked Creator: <strong>{matchedEditCreator.creator_name}</strong> ({matchedEditCreator.creator_email})
+                        </>
+                      ) : (
+                        <>✕ Creator ID not found in Creators Directory.</>
+                      )}
+                    </div>
+                  )}
+
+                  {creatorsList.length > 0 && !matchedEditCreator && (
+                    <div style={{ marginTop: '8px' }}>
+                      <span style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                        Quick select Creator:
+                      </span>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '85px', overflowY: 'auto' }}>
+                        {creatorsList.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setEditShowCreatorIdValue(c.creator_id)}
+                            style={{
+                              backgroundColor: '#f1f5f9',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '6px',
+                              padding: '3px 8px',
+                              fontSize: '11px',
+                              cursor: 'pointer',
+                              color: '#0f172a',
+                            }}
+                          >
+                            <strong>{c.creator_id}</strong> · {c.creator_name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={savingShowEdit || !matchedEditCreator}
+                  className="primary-button"
+                  style={{ marginTop: '6px', opacity: !matchedEditCreator ? 0.6 : 1 }}
+                >
+                  {savingShowEdit ? 'Saving Changes...' : 'Save Changes'}
+                </button>
+              </form>
             </div>
           </div>
         )}
@@ -1307,7 +1578,7 @@ export default function QcstarPortal({
           </div>
         )}
 
-        {/* MODAL: Create New Show & Connect via Creator ID */}
+        {/* MODAL: Create New Show & Connect via Creator ID (No Description Field) */}
         {showCreateModal && (
           <div style={modalStyles.overlay} onClick={() => !creatingShow && setShowCreateModal(false)}>
             <div style={modalStyles.card} onClick={(e) => e.stopPropagation()}>
@@ -1342,18 +1613,7 @@ export default function QcstarPortal({
                 </div>
 
                 <div>
-                  <label style={styles.label}>Description</label>
-                  <textarea
-                    rows="2"
-                    placeholder="Brief description of the show, format, or genre..."
-                    value={newShowDescription}
-                    onChange={(e) => setNewShowDescription(e.target.value)}
-                    style={{ ...styles.input, resize: 'vertical', fontFamily: 'inherit' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={styles.label}>Creator ID (to connect Show to Creator) *</label>
+                  <label style={styles.label}>Creator ID *</label>
                   <input
                     type="text"
                     required
@@ -1568,6 +1828,34 @@ const styles = {
     fontSize: '13px',
     letterSpacing: '0.4px',
   },
+  unassignedCodeBadge: {
+    backgroundColor: '#fef3c7',
+    color: '#92400e',
+    padding: '4px 10px',
+    borderRadius: '6px',
+    fontWeight: '800',
+    fontSize: '12px',
+  },
+  removeCreatorBtn: {
+    backgroundColor: '#fee2e2',
+    color: '#b91c1c',
+    border: '1px solid #fecaca',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
+  reopenShowBtnTable: {
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+    border: '1px solid #bbf7d0',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  },
   emptyBox: {
     padding: '28px 20px',
     textAlign: 'center',
@@ -1612,7 +1900,7 @@ const styles = {
     gap: '14px',
   },
   showCard: {
-    padding: '16px',
+    padding: '18px',
     borderRadius: '10px',
     border: '1.5px solid #e2e8f0',
     backgroundColor: '#f8fafc',
@@ -1630,7 +1918,7 @@ const styles = {
     backgroundColor: '#dcfce7',
     color: '#166534',
     border: '1px solid #bbf7d0',
-    padding: '4px 9px',
+    padding: '5px 10px',
     borderRadius: '6px',
     fontSize: '11px',
     fontWeight: '700',
@@ -1664,16 +1952,6 @@ const styles = {
     fontWeight: '700',
     cursor: 'pointer',
   },
-  subTabActiveRed: {
-    backgroundColor: '#b91c1c',
-    color: '#ffffff',
-    border: 'none',
-    padding: '8px 14px',
-    borderRadius: '8px',
-    fontSize: '13px',
-    fontWeight: '700',
-    cursor: 'pointer',
-  },
   subTabInactive: {
     backgroundColor: '#f1f5f9',
     color: '#475569',
@@ -1682,36 +1960,6 @@ const styles = {
     borderRadius: '8px',
     fontSize: '13px',
     fontWeight: '600',
-    cursor: 'pointer',
-  },
-  endShowBtn: {
-    backgroundColor: '#fee2e2',
-    color: '#b91c1c',
-    border: '1px solid #fecaca',
-    padding: '3px 9px',
-    borderRadius: '6px',
-    fontSize: '11px',
-    fontWeight: '700',
-    cursor: 'pointer',
-  },
-  reopenShowBtn: {
-    backgroundColor: '#dcfce7',
-    color: '#166534',
-    border: '1px solid #bbf7d0',
-    padding: '3px 9px',
-    borderRadius: '6px',
-    fontSize: '11px',
-    fontWeight: '700',
-    cursor: 'pointer',
-  },
-  endShowBtnLarge: {
-    backgroundColor: '#dc2626',
-    color: '#ffffff',
-    border: 'none',
-    padding: '8px 14px',
-    borderRadius: '8px',
-    fontSize: '13px',
-    fontWeight: '700',
     cursor: 'pointer',
   },
   confirmEndBtn: {
@@ -1798,7 +2046,7 @@ const modalStyles = {
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: "center",
+    justifyContent: 'center',
     zIndex: 1000,
     padding: '20px',
   },

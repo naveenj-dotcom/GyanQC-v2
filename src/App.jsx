@@ -10,7 +10,7 @@ import { supabase } from "./supabaseClient";
 import "./App.css";
 
 const DEFAULT_OVERLAY_URL = "/default-overlay.png";
-const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000; // Stay logged in for 30 days
+const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
 function getSavedSessionUser() {
   try {
@@ -31,9 +31,9 @@ function getSavedSessionUser() {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getSavedSessionUser());
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [adminView, setAdminView] = useState("overview"); // 'overview' | 'qc' | 'calendar'
+  const [adminView, setAdminView] = useState("overview");
 
-  // QCstar navigation history with Undo + Redo support (includes 'creators' view)
+  // QCstar navigation history with Undo + Redo ('home' | 'calendar' | 'shows' | 'creators' | 'manage-shows' | 'studio' | 'monthly-planner')
   const [qcstarNav, setQcstarNav] = useState({
     past: [],
     current: "home",
@@ -63,14 +63,12 @@ export default function App() {
     });
   }, []);
 
-  // Shows & Episodes State for QCstar / Admin
   const [shows, setShows] = useState([]);
   const [selectedShow, setSelectedShow] = useState(null);
   const [showEpisodes, setShowEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState(null);
   const [savingReview, setSavingReview] = useState(false);
 
-  // Create Show Modal State (for Admin quick button)
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newShowName, setNewShowName] = useState("");
   const [newAgencyName, setNewAgencyName] = useState("");
@@ -88,13 +86,10 @@ export default function App() {
   const [driveUrl, setDriveUrl] = useState("");
   const [driveError, setDriveError] = useState("");
   const [isBuffering, setIsBuffering] = useState(false);
-
   const [overlayVisible, setOverlayVisible] = useState(true);
-
   const [currentTime, setCurrentTime] = useState(0);
   const [comment, setComment] = useState("");
 
-  // Feedback state with Undo / Redo stacks
   const [feedbackHistory, setFeedbackHistory] = useState({
     past: [],
     present: [],
@@ -126,7 +121,6 @@ export default function App() {
   const [status, setStatus] = useState("Pending");
   const [copied, setCopied] = useState(false);
 
-  // Unified Undo & Redo handlers
   const canUndo =
     (qcstarView === "studio" && feedbackHistory.past.length > 0) ||
     qcstarNav.past.length > 0;
@@ -187,14 +181,10 @@ export default function App() {
     });
   }, [qcstarView, feedbackHistory.future.length]);
 
-  // Global Keyboard Shortcuts: Ctrl+Z (Undo) and Ctrl+Shift+Z / Ctrl+Y (Redo)
   useEffect(() => {
     const onKeyDown = (e) => {
       const tag = document.activeElement?.tagName?.toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select") {
-        return;
-      }
-
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
       const isMod = e.ctrlKey || e.metaKey;
       if (!isMod) return;
 
@@ -214,7 +204,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleUndo, handleRedo]);
 
-  // Silent background verification: never logs out on network hiccups, only if explicitly revoked
   useEffect(() => {
     if (!currentUser || currentUser.role === "creator") return;
 
@@ -252,7 +241,6 @@ export default function App() {
     }
   };
 
-  // Fetch episodes sorted descending so newest / highest episode numbers appear at the top
   const fetchEpisodesForShow = async (showUuid) => {
     if (!showUuid) return;
     const { data } = await supabase
@@ -515,10 +503,14 @@ export default function App() {
     (currentUser.role === "qcstar" && qcstarView === "monthly-planner") ||
     (currentUser.role === "admin" && adminView === "calendar");
 
-  // Pending episodes for the active show (sorted descending so newest episodes appear at top)
   const pendingShowEpisodes = showEpisodes.filter(
     (ep) => ep.status !== "Approved" && ep.status !== "Not Submitted"
   );
+
+  const portalActiveTab =
+    qcstarView === "creators" || qcstarView === "manage-shows"
+      ? "shows"
+      : qcstarView;
 
   return (
     <main className="qc-app">
@@ -538,7 +530,6 @@ export default function App() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-          {/* Global Undo, Redo + Home Buttons for QCstar */}
           {currentUser.role === "qcstar" && (
             <>
               <button
@@ -594,7 +585,6 @@ export default function App() {
             </>
           )}
 
-          {/* Admin Top Navigation */}
           {currentUser.role === "admin" && (
             <>
               <button
@@ -686,7 +676,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Create Show Modal (Admin) */}
       {showCreateModal && (
         <div style={modalStyles.overlay}>
           <div style={modalStyles.card}>
@@ -767,11 +756,9 @@ export default function App() {
         <AdminPanel onClose={() => setShowAdminPanel(false)} />
       )}
 
-      {/* INTERFACE 1: CREATOR / AGENCY PORTAL */}
       {currentUser.role === "creator" ? (
         <CreatorDashboard currentUser={currentUser} show={currentUser.show} />
       ) : isMonthlyPlannerPage ? (
-        /* FULL-PAGE MONTHLY CALENDAR PLANNER */
         <ShowCalendarManager
           shows={shows}
           selectedShow={selectedShow}
@@ -783,10 +770,9 @@ export default function App() {
           }}
         />
       ) : currentUser.role === "qcstar" && qcstarView !== "studio" ? (
-        /* QCSTAR HOME & TABS */
         <QcstarPortal
-          activeTab={qcstarView === "creators" ? "shows" : qcstarView}
-          isCreatorsView={qcstarView === "creators"}
+          activeTab={portalActiveTab}
+          subView={qcstarView}
           onNavigate={(nextTab) => {
             if (nextTab === "studio") {
               setActiveEpisode(null);
@@ -806,7 +792,7 @@ export default function App() {
             setSelectedShow(createdShow);
             navigateQcstar("shows");
           }}
-          onShowEnded={async () => {
+          onShowsUpdated={async () => {
             await fetchShows();
           }}
           onOpenEpisodeInStudio={(showObj, epObj) => {
@@ -818,7 +804,6 @@ export default function App() {
           onOpenMonthlyPlanner={() => navigateQcstar("monthly-planner")}
         />
       ) : currentUser.role === "admin" && adminView === "overview" ? (
-        /* INTERFACE 2: ADMIN OVERVIEW */
         <AdminOverview
           onOpenShowInQC={(showObj) => {
             setSelectedShow(showObj);
@@ -827,7 +812,6 @@ export default function App() {
           onOpenTeam={() => setShowAdminPanel(true)}
         />
       ) : (
-        /* INTERFACE 3: QC STUDIO */
         <div className="qc-workspace">
           <section className="video-column">
             <div className="panel video-panel">
@@ -996,7 +980,6 @@ export default function App() {
           </section>
 
           <section className="right-column">
-            {/* Shown ONLY when navigated from Shows/Calendar: Pending Episodes in this Show (Newest First) */}
             {activeEpisode && selectedShow && (
               <div className="panel">
                 <div className="panel-heading" style={{ marginBottom: "10px" }}>
