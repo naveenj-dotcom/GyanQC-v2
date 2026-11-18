@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import ReferenceOverlay from '../ReferenceOverlay';
 import CreatorNotificationBell from './CreatorNotificationBell';
+import CreatorMonthlyReport from './CreatorMonthlyReport';
 
 const VIDEO_PROXY_URL = 'https://gyanqc-video-proxy.naveenj.workers.dev';
 
@@ -382,7 +383,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
   return (
     <div style={{ maxWidth: '1240px', margin: '0 auto', padding: '20px 20px 104px' }}>
-      {/* TOP CREATOR HEADER BAR (NO UPLOAD BUTTON ON TOP RIGHT) */}
+      {/* TOP CREATOR HEADER BAR */}
       <div className="panel" style={{ marginBottom: '18px' }}>
         <div
           style={{
@@ -407,7 +408,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
               {activeTab === 'home' && 'Creator workspace overview, pending re-edits, and assigned shows.'}
               {activeTab === 'shows' && 'Browse your assigned shows (latest first) and upload or manage episodes.'}
               {activeTab === 'calendar' && 'View scheduled episode release dates and upload Google Drive links.'}
-              {activeTab === 'reports' && 'Track QC approval rates, re-edit status, and QCstar timestamp notes.'}
+              {activeTab === 'reports' && 'Monthly video submissions, QC status, and calendar target vs shared till date.'}
             </p>
           </div>
 
@@ -439,11 +440,10 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
       </div>
 
       {/* =========================================================
-          BOTTOM TAB 1: HOME (NO TOP-RIGHT UPLOAD BUTTON)
+          BOTTOM TAB 1: HOME
          ========================================================= */}
       {activeTab === 'home' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          {/* KPI SUMMARY CARDS */}
           <div style={styles.kpiGrid}>
             <div
               style={{ ...styles.kpiCard, cursor: 'pointer' }}
@@ -500,7 +500,6 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             </div>
           </div>
 
-          {/* LATEST SHOWS QUICK JUMP */}
           <div className="panel">
             <div className="panel-heading">
               <div>
@@ -549,7 +548,6 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
             </div>
           </div>
 
-          {/* LATEST EPISODES ACTIVITY (DESCENDING) */}
           <div className="panel">
             <div className="panel-heading">
               <div>
@@ -642,7 +640,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
       )}
 
       {/* =========================================================
-          BOTTOM TAB 2: SHOWS (LATEST SHOWS FIRST -> EPISODES DESCENDING)
+          BOTTOM TAB 2: SHOWS
          ========================================================= */}
       {activeTab === 'shows' && (
         <>
@@ -1033,134 +1031,24 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
       )}
 
       {/* =========================================================
-          BOTTOM TAB 4: REPORTS
+          BOTTOM TAB 4: REPORTS (MONTHLY REPORT COMPONENT)
          ========================================================= */}
       {activeTab === 'reports' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-          <div className="panel">
-            <div className="panel-heading">
-              <div>
-                <h3>QC Performance Report — {selectedShow?.show_name}</h3>
-                <p>Summary of episode approvals, pending reviews, and re-edit requests.</p>
-              </div>
-            </div>
-
-            <div style={styles.kpiGrid}>
-              <div style={styles.kpiCard}>
-                <span style={styles.kpiLabel}>TOTAL SUBMITTED</span>
-                <strong style={styles.kpiValue}>{submittedEpisodes.length}</strong>
-                <span style={styles.kpiSub}>Episodes uploaded</span>
-              </div>
-
-              <div style={styles.kpiCard}>
-                <span style={{ ...styles.kpiLabel, color: '#166534' }}>APPROVED</span>
-                <strong style={{ ...styles.kpiValue, color: '#15803d' }}>
-                  {approvedEps.length}
-                </strong>
-                <span style={styles.kpiSub}>{approvalRate}% approval rate</span>
-              </div>
-
-              <div style={styles.kpiCard}>
-                <span style={{ ...styles.kpiLabel, color: '#b91c1c' }}>CHANGES REQUESTED</span>
-                <strong style={{ ...styles.kpiValue, color: '#b91c1c' }}>
-                  {changesRequestedEps.length}
-                </strong>
-                <span style={styles.kpiSub}>Awaiting re-upload</span>
-              </div>
-
-              <div style={styles.kpiCard}>
-                <span style={{ ...styles.kpiLabel, color: '#92400e' }}>PENDING QC</span>
-                <strong style={{ ...styles.kpiValue, color: '#b45309' }}>
-                  {pendingEps.length}
-                </strong>
-                <span style={styles.kpiSub}>In QCstar queue</span>
-              </div>
-            </div>
-
-            {/* PROGRESS BAR */}
-            <div style={{ marginTop: '18px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: '700', color: '#334155', marginBottom: '6px' }}>
-                <span>Approval Progress</span>
-                <span>{approvalRate}% Approved</span>
-              </div>
-              <div style={styles.progressTrack}>
-                <div
-                  style={{
-                    ...styles.progressFill,
-                    width: `${approvalRate}%`,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="panel">
-            <div className="panel-heading">
-              <div>
-                <h3>Episode QC Log (Latest First)</h3>
-                <p>Detailed status and timestamped QCstar notes per episode.</p>
-              </div>
-            </div>
-
-            {submittedEpisodes.length === 0 ? (
-              <div style={styles.emptyBox}>
-                <strong>No episode report data yet.</strong>
-                <span>Submit episodes to see QC status metrics here.</span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {submittedEpisodes.map((ep) => {
-                  const badge = getCreatorStatusBadge(ep);
-                  const notesCount = Array.isArray(ep.feedback) ? ep.feedback.length : 0;
-                  return (
-                    <div key={ep.id} style={styles.episodeRow}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          <span style={styles.epPill}>Ep {ep.episode_number}</span>
-                          <strong style={{ fontSize: '14px', color: '#0f172a' }}>
-                            {ep.ep_name || `Episode ${ep.episode_number}`}
-                          </strong>
-                          <span
-                            style={{
-                              padding: '3px 10px',
-                              borderRadius: '999px',
-                              fontSize: '11px',
-                              fontWeight: '700',
-                              backgroundColor: badge.bg,
-                              color: badge.color,
-                              border: badge.border,
-                            }}
-                          >
-                            {badge.label}
-                          </span>
-                        </div>
-                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                          Scheduled: <strong>{ep.scheduled_date || 'Not set'}</strong> ·{' '}
-                          Reviewer: <strong>{ep.reviewed_by || 'Pending'}</strong> ·{' '}
-                          QC Notes: <strong>{notesCount}</strong>
-                        </p>
-                      </div>
-
-                      {ep.drive_file_id && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPreviewError('');
-                            setPreviewEp(ep);
-                          }}
-                          className="secondary-button"
-                          style={{ fontSize: '12px' }}
-                        >
-                          View Details
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+        <CreatorMonthlyReport
+          selectedShow={selectedShow}
+          monthLabel={monthLabel}
+          selectedMonth={selectedMonth}
+          onChangeMonth={setSelectedMonth}
+          onShiftMonth={shiftMonth}
+          monthItems={monthItems}
+          submittedEpisodes={submittedEpisodes}
+          styles={styles}
+          getCreatorStatusBadge={getCreatorStatusBadge}
+          onPreviewEpisode={(ep) => {
+            setPreviewError('');
+            setPreviewEp(ep);
+          }}
+        />
       )}
 
       {/* =========================================================
@@ -1214,7 +1102,7 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
         </div>
       </nav>
 
-      {/* MODAL: UPLOAD / UPDATE EPISODE GOOGLE DRIVE LINK (AUTO-FIXED EPISODE NUMBER) */}
+      {/* MODAL: UPLOAD / UPDATE EPISODE GOOGLE DRIVE LINK */}
       {uploadModalOpen && (
         <div
           style={modalStyles.overlay}
