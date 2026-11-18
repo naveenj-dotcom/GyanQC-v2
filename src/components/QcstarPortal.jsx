@@ -299,20 +299,25 @@ export default function QcstarPortal({
     await supabase.from('qc_show_calendar').delete().eq('show_uuid', showObj.id);
     await supabase.from('qc_episodes').delete().eq('show_uuid', showObj.id);
 
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from('qc_shows')
       .delete()
-      .eq('id', showObj.id);
+      .eq('id', showObj.id)
+      .select('id');
 
     setDeletingShowId(null);
     if (error) {
       alert('Error deleting Show: ' + error.message);
+    } else if (!deletedRows || deletedRows.length === 0) {
+      alert(
+        'Could not delete show due to database permissions. Please run the DELETE policy SQL in Supabase.'
+      );
     } else {
       if (selectedShowForQueue?.id === showObj.id) {
         setSelectedShowForQueue(null);
       }
       alert(`Show "${showObj.show_name}" has been deleted.`);
-      if (onShowsUpdated) onShowsUpdated();
+      if (onShowsUpdated) await onShowsUpdated();
     }
   };
 
