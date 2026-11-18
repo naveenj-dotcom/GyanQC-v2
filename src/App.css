@@ -785,12 +785,9 @@
    at the EXACT same coordinates as the 9:16 .overlay-frame-layer! */
 .video-frame-wrapper > iframe.adaptive-drive-frame {
   position: absolute !important;
-  top: 0 !important;
-  left: 50% !important;
-  transform: translateX(-50%) !important;
+  inset: 0 !important;
+  width: 100% !important;
   height: 100% !important;
-  width: calc(68vh * 16 / 9) !important;
-  max-width: none !important;
   display: block !important;
   border: 0 !important;
   margin: 0 !important;
@@ -801,8 +798,5 @@
     height: 36vh !important;
     max-height: 36vh !important;
     width: calc(36vh * 9 / 16) !important;
-  }
-  .studio-mobile-active .video-frame-wrapper > iframe.adaptive-drive-frame {
-    width: calc(36vh * 16 / 9) !important;
   }
 }
