@@ -1094,7 +1094,7 @@ export default function App() {
 
               <div ref={stageRef} className="video-stage">
                 {videoUrl ? (
-                  <div className="video-frame-wrapper" style={{ aspectRatio: "9 / 16", height: "100%", maxHeight: "100%" }}>
+                  <div className="video-frame-wrapper">
                     {streamMode === "adaptive" && activeEpisode?.drive_file_id ? (
                       <iframe className="adaptive-drive-frame" key={`${activeEpisode.drive_file_id}-${adaptiveSeekSec}`}
                         src={getAdaptiveDriveUrl(activeEpisode.drive_file_id, adaptiveSeekSec)}

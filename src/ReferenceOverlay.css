@@ -68,15 +68,3 @@
   transform: translateX(-50%) !important;
 }
 
-/* Flush 9:16 safe-zone overlay inside .video-frame-wrapper */
-.video-frame-wrapper .overlay-frame-layer,
-.video-frame-wrapper .reference-overlay-layer {
-  position: absolute !important;
-  inset: 0 !important;
-  left: 0 !important;
-  top: 0 !important;
-  transform: none !important;
-  width: 100% !important;
-  height: 100% !important;
-  pointer-events: none !important;
-}
