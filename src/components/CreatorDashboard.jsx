@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import ReferenceOverlay from '../ReferenceOverlay';
+import CreatorNotificationBell from './CreatorNotificationBell';
 
 const DEFAULT_OVERLAY_URL = '/default-overlay.png';
 
@@ -424,6 +425,10 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
   if (activeView === 'home') {
     return (
       <div style={{ maxWidth: '1040px', margin: '44px auto', padding: '0 20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+          <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
+        </div>
+
         <div style={{ textAlign: 'center', marginBottom: '32px' }}>
           <span style={styles.showBadge}>
             SHOW ID: {currentUser?.show_id || selectedShow?.show_id} · {activeShows.length} ACTIVE{' '}
@@ -545,19 +550,22 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => {
-            refreshActiveShows();
-            if (selectedShow) loadEpisodes(selectedShow);
-            loadAllShowEpisodes(activeShows);
-            loadCalendar(activeShows);
-          }}
-          className="secondary-button"
-          style={{ padding: '7px 12px', fontSize: '13px' }}
-        >
-          ↻ Refresh
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <CreatorNotificationBell currentUser={currentUser} creatorShows={activeShows} />
+          <button
+            type="button"
+            onClick={() => {
+              refreshActiveShows();
+              if (selectedShow) loadEpisodes(selectedShow);
+              loadAllShowEpisodes(activeShows);
+              loadCalendar(activeShows);
+            }}
+            className="secondary-button"
+            style={{ padding: '7px 12px', fontSize: '13px' }}
+          >
+            ↻ Refresh
+          </button>
+        </div>
       </div>
 
       {/* ===================================================================== */}
