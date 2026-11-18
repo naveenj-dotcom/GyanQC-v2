@@ -396,6 +396,22 @@ export default function App() {
     setStatus(ep.status === "Not Submitted" ? "Pending" : ep.status);
   };
 
+  const submittedEpisodesAsc = [...showEpisodes]
+    .filter((ep) => Boolean(ep.drive_file_id))
+    .sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0));
+
+  const currentSubmittedIdx = activeEpisode
+    ? submittedEpisodesAsc.findIndex((ep) => ep.id === activeEpisode.id)
+    : -1;
+
+  const prevSubmittedEp =
+    currentSubmittedIdx > 0 ? submittedEpisodesAsc[currentSubmittedIdx - 1] : null;
+
+  const nextSubmittedEp =
+    currentSubmittedIdx !== -1 && currentSubmittedIdx < submittedEpisodesAsc.length - 1
+      ? submittedEpisodesAsc[currentSubmittedIdx + 1]
+      : null;
+
   const handleEpisodeNumberSearch = (e) => {
     e.preventDefault();
     const q = epSearchQuery.trim().toLowerCase();
@@ -877,6 +893,63 @@ export default function App() {
                       >
                         🔍 Go
                       </button>
+
+                      {activeEpisode && submittedEpisodesAsc.length > 1 && (
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                          <button
+                            type="button"
+                            disabled={!nextSubmittedEp}
+                            onClick={() => nextSubmittedEp && loadEpisodeIntoPlayer(nextSubmittedEp)}
+                            title={
+                              nextSubmittedEp
+                                ? `Next Episode (Ep ${nextSubmittedEp.episode_number})`
+                                : "Already at latest episode"
+                            }
+                            className="secondary-button"
+                            style={{
+                              height: "28px",
+                              width: "26px",
+                              padding: 0,
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              borderRadius: "6px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              opacity: nextSubmittedEp ? 1 : 0.4,
+                              cursor: nextSubmittedEp ? "pointer" : "not-allowed",
+                            }}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!prevSubmittedEp}
+                            onClick={() => prevSubmittedEp && loadEpisodeIntoPlayer(prevSubmittedEp)}
+                            title={
+                              prevSubmittedEp
+                                ? `Previous Episode (Ep ${prevSubmittedEp.episode_number})`
+                                : "Already at first episode"
+                            }
+                            className="secondary-button"
+                            style={{
+                              height: "28px",
+                              width: "26px",
+                              padding: 0,
+                              fontSize: "11px",
+                              fontWeight: "800",
+                              borderRadius: "6px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              opacity: prevSubmittedEp ? 1 : 0.4,
+                              cursor: prevSubmittedEp ? "pointer" : "not-allowed",
+                            }}
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      )}
                     </form>
                   )}
 
