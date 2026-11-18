@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
@@ -23,12 +23,84 @@ function getTodayIST() {
 export default function CreatorNotificationBell({ currentUser, creatorShows = [] }) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [pushEnabled, setPushEnabled] = useState(false);
-  const [subscribing, setSubscribing] = useState(false);
+  const [pushStatus, setPushStatus] = useState('checking'); // 'checking' | 'granted' | 'default' | 'denied'
   const [testingPush, setTestingPush] = useState(false);
+  const autoPromptedRef = useRef(false);
 
   const creatorEmail = (currentUser?.email || '').trim().toLowerCase();
 
+  // Register Service Worker & save device push subscription to Supabase
+  const registerDeviceSubscription = async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return false;
+    if (Notification.permission !== 'granted') return false;
+
+    try {
+      const reg = await navigator.serviceWorker.register('/sw.js');
+      await navigator.serviceWorker.ready;
+
+      let subscription = await reg.pushManager.getSubscription();
+      if (!subscription && VAPID_PUBLIC_KEY) {
+        subscription = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+      }
+
+      if (subscription && creatorEmail) {
+        const subJson = subscription.toJSON();
+        const deviceLabel = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent)
+          ? 'Mobile Device'
+          : 'Laptop / Desktop';
+
+        await supabase.from('qc_push_subscriptions').upsert(
+          [
+            {
+              creator_email: creatorEmail,
+              creator_id: currentUser?.creator_id || '',
+              endpoint: subJson.endpoint,
+              subscription: subJson,
+              device_label: deviceLabel,
+            },
+          ],
+          { onConflict: 'endpoint' }
+        );
+      }
+      setPushStatus('granted');
+      return true;
+    } catch (err) {
+      console.warn('Push registration note:', err);
+      setPushStatus(Notification.permission);
+      return false;
+    }
+  };
+
+  // Automatically ask the Creator for Laptop / Mobile notification permission as soon as they enter the portal
+  const requestPermissionAutomatically = async () => {
+    if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
+
+    const currentPerm = Notification.permission;
+    setPushStatus(currentPerm);
+
+    if (currentPerm === 'granted') {
+      await registerDeviceSubscription();
+      return;
+    }
+
+    if (currentPerm === 'default' && !autoPromptedRef.current) {
+      autoPromptedRef.current = true;
+      try {
+        const result = await Notification.requestPermission();
+        setPushStatus(result);
+        if (result === 'granted') {
+          await registerDeviceSubscription();
+        }
+      } catch (err) {
+        console.warn('Permission request skipped:', err);
+      }
+    }
+  };
+
+  // Sync today's scheduled targets into qc_notifications & load bell items
   const syncAndLoadNotifications = async () => {
     if (!creatorEmail) return;
 
@@ -78,114 +150,77 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
     if (list) setNotifications(list);
   };
 
-  const checkExistingSubscription = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    try {
-      const reg = await navigator.serviceWorker.register('/sw.js');
-      const existing = await reg.pushManager.getSubscription();
-      if (existing && Notification.permission === 'granted') {
-        setPushEnabled(true);
-      }
-    } catch (e) {
-      console.warn('SW check skipped:', e);
-    }
-  };
+  useEffect(() => {
+    requestPermissionAutomatically();
+  }, [creatorEmail]);
 
   useEffect(() => {
     syncAndLoadNotifications();
-    checkExistingSubscription();
   }, [creatorEmail, creatorShows.length]);
-
-  const handleEnableDevicePush = async () => {
-    if (!('Notification' in window) || !('serviceWorker' in navigator)) {
-      alert('Your browser does not support desktop/mobile push notifications.');
-      return;
-    }
-    if (!VAPID_PUBLIC_KEY) {
-      alert('Push key is missing. Please redeploy Vercel after saving environment variables.');
-      return;
-    }
-
-    setSubscribing(true);
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        alert(
-          'Notification permission was blocked. Please click the lock/tune icon in your browser address bar and allow Notifications.'
-        );
-        setSubscribing(false);
-        return;
-      }
-
-      const reg = await navigator.serviceWorker.register('/sw.js');
-      await navigator.serviceWorker.ready;
-
-      const subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-      });
-
-      const subJson = subscription.toJSON();
-      const deviceLabel = navigator.userAgent.includes('Mobile')
-        ? 'Mobile Browser'
-        : 'Laptop / Desktop Browser';
-
-      await supabase.from('qc_push_subscriptions').upsert(
-        [
-          {
-            creator_email: creatorEmail,
-            creator_id: currentUser?.creator_id || '',
-            endpoint: subJson.endpoint,
-            subscription: subJson,
-            device_label: deviceLabel,
-          },
-        ],
-        { onConflict: 'endpoint' }
-      );
-
-      setPushEnabled(true);
-      alert(
-        'Desktop/Mobile Push Notifications enabled! You will receive a banner on this device whenever you have a video target scheduled today.'
-      );
-    } catch (err) {
-      alert('Could not enable notifications: ' + err.message);
-    }
-    setSubscribing(false);
-  };
 
   const handleSendTestPush = async () => {
     setTestingPush(true);
     const sampleShow = creatorShows[0]?.show_name || 'Your Active Show';
+
+    // Ensure subscription is saved first
+    await registerDeviceSubscription();
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     try {
       const res = await fetch('/api/send-scheduled-reminders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
         body: JSON.stringify({
           testCreatorEmail: creatorEmail,
           showName: sampleShow,
           episodeLabel: 'Ep 1',
         }),
       });
+      clearTimeout(timeoutId);
+
       const text = await res.text();
       let data = {};
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error(text.slice(0, 160));
+        throw new Error('Unexpected server response');
       }
+
       if (!res.ok) {
         throw new Error(data.error || `Server error ${res.status}`);
       }
+
       if (data.ok && data.sentDevices > 0) {
-        alert(`Test notification sent to ${data.sentDevices} device(s)! Check your OS notification banner.`);
+        alert(`Notification sent to ${data.sentDevices} device(s)! Check your laptop/mobile notification banner.`);
+      } else if (data.errors?.length > 0) {
+        alert('Push delivery error: ' + data.errors[0]);
       } else {
-        alert(
-          data.errors?.[0] ||
-            'Click "Enable Laptop/Phone Alerts" first so this device is registered.'
-        );
+        // Fallback: trigger native Service Worker notification directly on this device
+        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+          const reg = await navigator.serviceWorker.ready;
+          await reg.showNotification(`🎬 Video Target Today — ${sampleShow}`, {
+            body: `You have a video target today to submit Ep 1 under "${sampleShow}".`,
+            icon: '/favicon.svg',
+            badge: '/favicon.svg',
+          });
+        }
       }
     } catch (err) {
-      alert('Test push failed: ' + err.message);
+      clearTimeout(timeoutId);
+      // Fallback: still show native OS banner via Service Worker if permission is granted
+      if ('serviceWorker' in navigator && Notification.permission === 'granted') {
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(`🎬 Video Target Today — ${sampleShow}`, {
+          body: `You have a video target today to submit Ep 1 under "${sampleShow}".`,
+          icon: '/favicon.svg',
+          badge: '/favicon.svg',
+        });
+      } else {
+        alert('Notification error: ' + (err.name === 'AbortError' ? 'Request timed out' : err.message));
+      }
     }
     setTestingPush(false);
   };
@@ -210,7 +245,10 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
         onClick={() => {
           const nextOpen = !open;
           setOpen(nextOpen);
-          if (nextOpen) syncAndLoadNotifications();
+          if (nextOpen) {
+            syncAndLoadNotifications();
+            requestPermissionAutomatically();
+          }
         }}
         title="Video Target Notifications"
         style={bellStyles.bellBtn}
@@ -227,7 +265,7 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
                 Today&apos;s Video Targets
               </strong>
               <span style={{ display: 'block', fontSize: '11px', color: '#64748b' }}>
-                Daily reminders for scheduled episodes
+                Automatic alerts on Laptop &amp; Mobile
               </span>
             </div>
             {unreadCount > 0 && (
@@ -241,19 +279,19 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
             )}
           </div>
 
-          <div style={bellStyles.pushBar}>
-            {!pushEnabled ? (
-              <button
-                type="button"
-                disabled={subscribing}
-                onClick={handleEnableDevicePush}
-                style={bellStyles.enablePushBtn}
-              >
-                {subscribing
-                  ? 'Enabling...'
-                  : '🔔 Enable Laptop / Mobile Push Alerts'}
-              </button>
-            ) : (
+          <div
+            style={{
+              ...bellStyles.pushBar,
+              backgroundColor: pushStatus === 'denied' ? '#fef2f2' : '#f0fdf4',
+              borderBottom:
+                pushStatus === 'denied' ? '1px solid #fecaca' : '1px solid #bbf7d0',
+            }}
+          >
+            {pushStatus === 'denied' ? (
+              <span style={{ fontSize: '11px', fontWeight: '700', color: '#b91c1c' }}>
+                Notifications blocked in browser. Click the lock/tune icon in the address bar → Allow Notifications.
+              </span>
+            ) : pushStatus === 'granted' ? (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '11px', fontWeight: '700', color: '#166534' }}>
                   ✓ Laptop / Mobile Alerts Active
@@ -264,9 +302,17 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
                   onClick={handleSendTestPush}
                   style={bellStyles.testBtn}
                 >
-                  {testingPush ? 'Sending...' : 'Send Test Banner'}
+                  {testingPush ? 'Sending...' : 'Test Banner'}
                 </button>
               </div>
+            ) : (
+              <button
+                type="button"
+                onClick={requestPermissionAutomatically}
+                style={bellStyles.enablePushBtn}
+              >
+                Allow Laptop / Mobile Notifications
+              </button>
             )}
           </div>
 
@@ -362,8 +408,6 @@ const bellStyles = {
   },
   pushBar: {
     padding: '10px 14px',
-    backgroundColor: '#f0fdf4',
-    borderBottom: '1px solid #bbf7d0',
   },
   enablePushBtn: {
     width: '100%',
