@@ -5,7 +5,9 @@ import CreatorNotificationBell from './CreatorNotificationBell';
 
 const DEFAULT_OVERLAY_URL = '/default-overlay.png';
 
-export default function CreatorDashboard({ currentUser, show: initialShow }) {
+export default function CreatorDashboard({ currentUser, show: initialShow, overlayUrl }) {
+  const activeOverlay = overlayUrl || DEFAULT_OVERLAY_URL;
+
   // Home view launcher: 'home' | 'calendar' | 'shows' | 'player' | 'reports'
   const [activeView, setActiveView] = useState('home');
 
@@ -1040,7 +1042,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
 
                   <div style={{ pointerEvents: 'none' }}>
                     <ReferenceOverlay
-                      src={DEFAULT_OVERLAY_URL}
+                      src={activeOverlay}
                       visible={playerOverlayVisible}
                       tolerance={100}
                       opacity={80}
@@ -1113,7 +1115,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
                   {playerVideoUrl
                     ? playerBuffering
                       ? 'Buffering video stream...'
-                      : 'Default 9:16 QCstar reference overlay active'
+                      : '9:16 QCstar reference overlay active'
                     : 'Upload a local video or paste a Drive link above'}
                 </span>
               </div>
@@ -1676,7 +1678,7 @@ export default function CreatorDashboard({ currentUser, show: initialShow }) {
 
                       <div style={{ pointerEvents: 'none' }}>
                         <ReferenceOverlay
-                          src={DEFAULT_OVERLAY_URL}
+                          src={activeOverlay}
                           visible={modalOverlayVisible}
                           tolerance={100}
                           opacity={80}

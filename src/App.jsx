@@ -6,6 +6,7 @@ import CreatorDashboard from "./components/CreatorDashboard";
 import AdminOverview from "./components/AdminOverview";
 import ShowCalendarManager from "./components/ShowCalendarManager";
 import QcstarPortal from "./components/QcstarPortal";
+import OverlaySettingsModal from "./components/OverlaySettingsModal";
 import { supabase } from "./supabaseClient";
 import "./App.css";
 
@@ -31,9 +32,10 @@ function getSavedSessionUser() {
 export default function App() {
   const [currentUser, setCurrentUser] = useState(() => getSavedSessionUser());
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [adminView, setAdminView] = useState("overview");
+  const [showOverlayModal, setShowOverlayModal] = useState(false);
+  const [activeOverlayUrl, setActiveOverlayUrl] = useState(DEFAULT_OVERLAY_URL);
 
-  // QCstar navigation history with Undo + Redo ('home' | 'calendar' | 'shows' | 'creators' | 'manage-shows' | 'studio' | 'monthly-planner')
+  // Unified QCstar + Admin navigation history
   const [qcstarNav, setQcstarNav] = useState({
     past: [],
     current: "home",
@@ -68,13 +70,6 @@ export default function App() {
   const [showEpisodes, setShowEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState(null);
   const [savingReview, setSavingReview] = useState(false);
-
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newShowName, setNewShowName] = useState("");
-  const [newAgencyName, setNewAgencyName] = useState("");
-  const [newCreatorName, setNewCreatorName] = useState("");
-  const [newShowId, setNewShowId] = useState("");
-  const [creatingShow, setCreatingShow] = useState(false);
 
   const videoRef = useRef(null);
   const stageRef = useRef(null);
@@ -120,6 +115,22 @@ export default function App() {
 
   const [status, setStatus] = useState("Pending");
   const [copied, setCopied] = useState(false);
+
+  const fetchGlobalOverlay = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("qc_settings")
+      .select("value")
+      .eq("key", "video_overlay_url")
+      .maybeSingle();
+
+    if (!error && data?.value) {
+      setActiveOverlayUrl(data.value);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGlobalOverlay();
+  }, [fetchGlobalOverlay]);
 
   const canUndo =
     (qcstarView === "studio" && feedbackHistory.past.length > 0) ||
@@ -277,6 +288,7 @@ export default function App() {
   const handleLogout = () => {
     setCurrentUser(null);
     setShowAdminPanel(false);
+    setShowOverlayModal(false);
     setSelectedShow(null);
     setActiveEpisode(null);
     setQcstarNav({ past: [], current: "home", future: [] });
@@ -295,55 +307,6 @@ export default function App() {
   if (!currentUser) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
-
-  const handleCreateShow = async (e) => {
-    e.preventDefault();
-    setCreatingShow(true);
-
-    const { data: createdShow, error } = await supabase
-      .from("qc_shows")
-      .insert([
-        {
-          show_name: newShowName.trim(),
-          agency_name: newAgencyName.trim(),
-          creator_name: newCreatorName.trim(),
-          show_id: newShowId.trim(),
-          created_by_email: currentUser.email,
-          created_by_name: currentUser.full_name,
-        },
-      ])
-      .select("*")
-      .single();
-
-    if (error) {
-      alert("Error creating Show: " + error.message);
-      setCreatingShow(false);
-      return;
-    }
-
-    const initialEps = [5, 4, 3, 2, 1].map((num) => ({
-      show_uuid: createdShow.id,
-      episode_number: num,
-      ep_name: "",
-      drive_url: "",
-      drive_file_id: "",
-      scheduled_date: null,
-      status: "Not Submitted",
-      feedback: [],
-    }));
-    await supabase.from("qc_episodes").insert(initialEps);
-
-    setCreatingShow(false);
-    setShowCreateModal(false);
-    setNewShowName("");
-    setNewAgencyName("");
-    setNewCreatorName("");
-    setNewShowId("");
-
-    await fetchShows();
-    setSelectedShow(createdShow);
-    if (currentUser.role === "admin") setAdminView("qc");
-  };
 
   const loadEpisodeIntoPlayer = (ep) => {
     if (!ep.drive_file_id) {
@@ -499,9 +462,8 @@ export default function App() {
     videoRef.current.play().catch(() => {});
   };
 
-  const isMonthlyPlannerPage =
-    (currentUser.role === "qcstar" && qcstarView === "monthly-planner") ||
-    (currentUser.role === "admin" && adminView === "calendar");
+  const isStaff = currentUser.role === "qcstar" || currentUser.role === "admin";
+  const isMonthlyPlannerPage = isStaff && qcstarView === "monthly-planner";
 
   const pendingShowEpisodes = showEpisodes.filter(
     (ep) => ep.status !== "Approved" && ep.status !== "Not Submitted"
@@ -522,15 +484,15 @@ export default function App() {
             <span>
               {currentUser.role === "creator"
                 ? `Creator Portal · Show ID ${currentUser.show_id || currentUser.show?.show_id}`
-                : currentUser.role === "qcstar"
-                ? "QCstar Workspace"
-                : "Operations Command Center"}
+                : currentUser.role === "admin"
+                ? "Admin & QCstar Studio"
+                : "QCstar Workspace"}
             </span>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-          {currentUser.role === "qcstar" && (
+          {isStaff && (
             <>
               <button
                 type="button"
@@ -589,58 +551,33 @@ export default function App() {
             <>
               <button
                 type="button"
-                onClick={() => setShowCreateModal(true)}
-                style={{
-                  backgroundColor: "#16a34a",
-                  color: "#ffffff",
-                  border: "none",
-                  padding: "8px 14px",
-                  borderRadius: "8px",
-                  fontSize: "13px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                }}
-              >
-                + Create Show
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setAdminView("calendar")}
+                onClick={() => setShowOverlayModal(true)}
                 className="secondary-button"
                 style={{
-                  backgroundColor: adminView === "calendar" ? "#dbeafe" : undefined,
-                  color: adminView === "calendar" ? "#1e3a8a" : undefined,
+                  backgroundColor: "#fef3c7",
+                  borderColor: "#f59e0b",
+                  color: "#92400e",
                   fontWeight: "700",
+                  fontSize: "13px",
                 }}
               >
-                📅 Monthly Calendar
+                🎨 Video Overlay
               </button>
 
               <button
                 type="button"
-                onClick={() => setAdminView("overview")}
+                onClick={() => navigateQcstar("admin-overview")}
                 className="secondary-button"
                 style={{
-                  backgroundColor: adminView === "overview" ? "#e0e7ff" : undefined,
-                  color: adminView === "overview" ? "#1e3a8a" : undefined,
+                  backgroundColor: qcstarView === "admin-overview" ? "#e0e7ff" : undefined,
+                  color: qcstarView === "admin-overview" ? "#1e3a8a" : undefined,
                   fontWeight: "600",
+                  fontSize: "13px",
                 }}
               >
-                All Shows Overview
+                📊 Shows Overview
               </button>
-              <button
-                type="button"
-                onClick={() => setAdminView("qc")}
-                className="secondary-button"
-                style={{
-                  backgroundColor: adminView === "qc" ? "#e0e7ff" : undefined,
-                  color: adminView === "qc" ? "#1e3a8a" : undefined,
-                  fontWeight: "600",
-                }}
-              >
-                QCstar Studio
-              </button>
+
               <button
                 type="button"
                 onClick={() => setShowAdminPanel(true)}
@@ -655,7 +592,7 @@ export default function App() {
                   cursor: "pointer",
                 }}
               >
-                Team & Approvals
+                👥 Team & Approvals
               </button>
             </>
           )}
@@ -676,100 +613,41 @@ export default function App() {
         </div>
       </header>
 
-      {showCreateModal && (
-        <div style={modalStyles.overlay}>
-          <div style={modalStyles.card}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
-              <div>
-                <h3 style={{ margin: 0, color: "#0f172a" }}>Create New Show</h3>
-                <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748b" }}>
-                  Show ID (POC Phone Number) will be the Creator/Agency login credential.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                style={modalStyles.closeBtn}
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateShow} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <div>
-                <label style={modalStyles.label}>Show Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Crime Patrol Stories"
-                  value={newShowName}
-                  onChange={(e) => setNewShowName(e.target.value)}
-                  style={modalStyles.input}
-                />
-              </div>
-
-              <div>
-                <label style={modalStyles.label}>Agency Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Red Chillies Digital"
-                  value={newAgencyName}
-                  onChange={(e) => setNewAgencyName(e.target.value)}
-                  style={modalStyles.input}
-                />
-              </div>
-
-              <div>
-                <label style={modalStyles.label}>Creator Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Vikram Mehta"
-                  value={newCreatorName}
-                  onChange={(e) => setNewCreatorName(e.target.value)}
-                  style={modalStyles.input}
-                />
-              </div>
-
-              <div>
-                <label style={modalStyles.label}>Show ID (POC Phone Number) *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 9876543210"
-                  value={newShowId}
-                  onChange={(e) => setNewShowId(e.target.value)}
-                  style={modalStyles.input}
-                />
-              </div>
-
-              <button type="submit" disabled={creatingShow} className="primary-button" style={{ marginTop: "6px" }}>
-                {creatingShow ? "Creating Show..." : "Create Show & Generate Login Credentials"}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
       {showAdminPanel && (
         <AdminPanel onClose={() => setShowAdminPanel(false)} />
       )}
 
+      {showOverlayModal && (
+        <OverlaySettingsModal
+          currentOverlayUrl={activeOverlayUrl}
+          onSaved={(newUrl) => setActiveOverlayUrl(newUrl)}
+          onClose={() => setShowOverlayModal(false)}
+        />
+      )}
+
       {currentUser.role === "creator" ? (
-        <CreatorDashboard currentUser={currentUser} show={currentUser.show} />
+        <CreatorDashboard
+          currentUser={currentUser}
+          show={currentUser.show}
+          overlayUrl={activeOverlayUrl}
+        />
       ) : isMonthlyPlannerPage ? (
         <ShowCalendarManager
           shows={shows}
           selectedShow={selectedShow}
           onSelectShow={(s) => setSelectedShow(s)}
           currentUser={currentUser}
-          onBackToStudio={() => {
-            if (currentUser.role === "admin") setAdminView("qc");
-            else handleUndo();
-          }}
+          onBackToStudio={() => handleUndo()}
         />
-      ) : currentUser.role === "qcstar" && qcstarView !== "studio" ? (
+      ) : currentUser.role === "admin" && qcstarView === "admin-overview" ? (
+        <AdminOverview
+          onOpenShowInQC={(showObj) => {
+            setSelectedShow(showObj);
+            navigateQcstar("studio");
+          }}
+          onOpenTeam={() => setShowAdminPanel(true)}
+        />
+      ) : isStaff && qcstarView !== "studio" ? (
         <QcstarPortal
           activeTab={portalActiveTab}
           subView={qcstarView}
@@ -802,14 +680,6 @@ export default function App() {
             setTimeout(() => loadEpisodeIntoPlayer(epObj), 100);
           }}
           onOpenMonthlyPlanner={() => navigateQcstar("monthly-planner")}
-        />
-      ) : currentUser.role === "admin" && adminView === "overview" ? (
-        <AdminOverview
-          onOpenShowInQC={(showObj) => {
-            setSelectedShow(showObj);
-            setAdminView("qc");
-          }}
-          onOpenTeam={() => setShowAdminPanel(true)}
         />
       ) : (
         <div className="qc-workspace">
@@ -881,7 +751,7 @@ export default function App() {
 
                     <div style={{ pointerEvents: "none" }}>
                       <ReferenceOverlay
-                        src={DEFAULT_OVERLAY_URL}
+                        src={activeOverlayUrl}
                         visible={overlayVisible}
                         tolerance={100}
                         opacity={80}
@@ -1040,16 +910,27 @@ export default function App() {
               <div className="panel-heading" style={{ marginBottom: 0 }}>
                 <div>
                   <h3>Reference Image Overlay</h3>
-                  <p>Default 9:16 safe-zone reference active.</p>
+                  <p>9:16 safe-zone reference active.</p>
                 </div>
 
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => setOverlayVisible((value) => !value)}
-                >
-                  {overlayVisible ? "Hide Overlay" : "Show Overlay"}
-                </button>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {currentUser.role === "admin" && (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => setShowOverlayModal(true)}
+                    >
+                      Change Image
+                    </button>
+                  )}
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setOverlayVisible((value) => !value)}
+                  >
+                    {overlayVisible ? "Hide Overlay" : "Show Overlay"}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1171,47 +1052,3 @@ export default function App() {
     </main>
   );
 }
-
-const modalStyles = {
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-    padding: "20px",
-  },
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: "12px",
-    width: "100%",
-    maxWidth: "460px",
-    padding: "24px",
-    boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.15)",
-  },
-  closeBtn: {
-    background: "#f1f5f9",
-    border: "none",
-    padding: "6px 10px",
-    borderRadius: "6px",
-    cursor: "pointer",
-    fontWeight: "600",
-  },
-  label: {
-    display: "block",
-    fontSize: "13px",
-    fontWeight: "600",
-    color: "#334155",
-    marginBottom: "5px",
-  },
-  input: {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: "8px",
-    border: "1px solid #cbd5e1",
-    fontSize: "14px",
-    boxSizing: "border-box",
-  },
-};
