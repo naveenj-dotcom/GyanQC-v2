@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import ActiveShowSearchBar from './ActiveShowSearchBar';
 
 // Helper to extract Drive File ID and build reliable View & Direct Download URLs
 function getDriveLinks(ep) {
@@ -75,6 +76,7 @@ export default function QcstarPortal({
   const [loadingQueue, setLoadingQueue] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [queueEpSearch, setQueueEpSearch] = useState('');
+  const [activeShowSearch, setActiveShowSearch] = useState('');
 
   // Manage Shows Page state (List, Edit Show Name, Edit Creator ID, End/Reopen Show)
   const [manageShowSearch, setManageShowSearch] = useState('');
@@ -825,13 +827,23 @@ export default function QcstarPortal({
       );
     });
 
-    // Put shows with pending/unseen videos first so QCstar immediately spots them
-    const prioritizedActiveShows = [...activeShows].sort((a, b) => {
-      const pA = pendingCountsByShow[a.id] || 0;
-      const pB = pendingCountsByShow[b.id] || 0;
-      if (pB !== pA) return pB - pA;
-      return 0;
-    });
+    // Filter & sort active shows (pending/unseen videos first)
+    const activeShowQuery = activeShowSearch.trim().toLowerCase();
+    const prioritizedActiveShows = [...activeShows]
+      .filter((s) => {
+        if (!activeShowQuery) return true;
+        return (
+          (s.show_name || "").toLowerCase().includes(activeShowQuery) ||
+          (s.creator_name || "").toLowerCase().includes(activeShowQuery) ||
+          (s.creator_id || s.show_id || "").toLowerCase().includes(activeShowQuery)
+        );
+      })
+      .sort((a, b) => {
+        const pA = pendingCountsByShow[a.id] || 0;
+        const pB = pendingCountsByShow[b.id] || 0;
+        if (pB !== pA) return pB - pA;
+        return 0;
+      });
 
     // Filter queue episodes by Episode # or Name (handles 200+ episodes)
     const normalizedQueueQuery = queueEpSearch
@@ -1179,12 +1191,29 @@ export default function QcstarPortal({
               </div>
             </div>
 
+            {activeShows.length > 0 && (
+              <ActiveShowSearchBar
+                shows={activeShows}
+                searchQuery={activeShowSearch}
+                onSearchChange={setActiveShowSearch}
+                pendingCountsByShow={pendingCountsByShow}
+                onSelectShow={handleSelectShowForQueue}
+              />
+            )}
+
             {activeShows.length === 0 ? (
               <div style={styles.emptyBox}>
                 <strong>No active Shows found.</strong>
                 <span>
                   Click <strong>Creators</strong> to generate a Creator ID, then click{' '}
                   <strong>Shows</strong> to create and manage Shows.
+                </span>
+              </div>
+            ) : prioritizedActiveShows.length === 0 ? (
+              <div style={styles.emptyBox}>
+                <strong>No active Show matching "{activeShowSearch}".</strong>
+                <span>
+                  Try searching another Show Name, Creator Name, or Creator ID, or clear the search bar above.
                 </span>
               </div>
             ) : (
