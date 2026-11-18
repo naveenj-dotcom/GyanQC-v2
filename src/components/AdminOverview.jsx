@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabaseClient';
+import ActiveShowSearchBar from './ActiveShowSearchBar';
 
 export default function AdminOverview({ onOpenShowInQC, onOpenTeam }) {
   const [shows, setShows] = useState([]);
   const [episodes, setEpisodes] = useState([]);
   const [userCount, setUserCount] = useState({ total: 0, pending: 0 });
   const [loading, setLoading] = useState(true);
+  const [showSearch, setShowSearch] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -33,6 +35,27 @@ export default function AdminOverview({ onOpenShowInQC, onOpenTeam }) {
   const pendingEps = episodes.filter((e) => e.status === 'Pending').length;
   const changesEps = episodes.filter((e) => e.status === 'Changes Requested').length;
   const approvedEps = episodes.filter((e) => e.status === 'Approved').length;
+
+  // Map pending QC counts by show_uuid for the search dropdown badges
+  const pendingCountsByShow = {};
+  for (const ep of episodes) {
+    if (ep.status !== 'Approved' && ep.status !== 'Not Submitted') {
+      pendingCountsByShow[ep.show_uuid] = (pendingCountsByShow[ep.show_uuid] || 0) + 1;
+    }
+  }
+
+  const q = showSearch.trim().toLowerCase();
+  const filteredShows = shows.filter((s) => {
+    if (!q) return true;
+    return (
+      (s.show_name || '').toLowerCase().includes(q) ||
+      (s.show_id || '').toLowerCase().includes(q) ||
+      (s.creator_id || '').toLowerCase().includes(q) ||
+      (s.agency_name || '').toLowerCase().includes(q) ||
+      (s.creator_name || '').toLowerCase().includes(q) ||
+      (s.created_by_name || '').toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div style={{ maxWidth: '1360px', margin: '0 auto', padding: '20px' }}>
@@ -68,7 +91,7 @@ export default function AdminOverview({ onOpenShowInQC, onOpenTeam }) {
       <div className="panel" style={{ marginTop: '20px' }}>
         <div className="panel-heading">
           <div>
-            <h3>All Shows & Operations Overview</h3>
+            <h3>All Shows & Operations Overview ({shows.length})</h3>
             <p>Shows created by QCstars, login credentials (Show Name + POC Phone), and episode progress.</p>
           </div>
           <button type="button" onClick={loadData} className="secondary-button">
@@ -76,10 +99,24 @@ export default function AdminOverview({ onOpenShowInQC, onOpenTeam }) {
           </button>
         </div>
 
+        {!loading && shows.length > 0 && (
+          <ActiveShowSearchBar
+            shows={shows}
+            searchQuery={showSearch}
+            onSearchChange={setShowSearch}
+            pendingCountsByShow={pendingCountsByShow}
+            onSelectShow={(s) => onOpenShowInQC(s)}
+          />
+        )}
+
         {loading ? (
           <p style={{ color: '#64748b' }}>Loading shows...</p>
         ) : shows.length === 0 ? (
           <p style={{ color: '#64748b' }}>No Shows created yet. Switch to QCstar Studio to create a Show.</p>
+        ) : filteredShows.length === 0 ? (
+          <p style={{ color: '#64748b', padding: '14px 0' }}>
+            No Shows matching "<strong>{showSearch}</strong>". Try another Show Name, Creator, or ID.
+          </p>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={styles.table}>
@@ -95,7 +132,7 @@ export default function AdminOverview({ onOpenShowInQC, onOpenTeam }) {
                 </tr>
               </thead>
               <tbody>
-                {shows.map((s) => {
+                {filteredShows.map((s) => {
                   const showEps = episodes.filter((e) => e.show_uuid === s.id);
                   const submittedCount = showEps.filter((e) => e.status !== 'Not Submitted').length;
                   const approvedCount = showEps.filter((e) => e.status === 'Approved').length;
