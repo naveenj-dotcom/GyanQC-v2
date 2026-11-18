@@ -23,13 +23,11 @@ function getTodayIST() {
 export default function CreatorNotificationBell({ currentUser, creatorShows = [] }) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [pushStatus, setPushStatus] = useState('checking'); // 'checking' | 'granted' | 'default' | 'denied'
-  const [testingPush, setTestingPush] = useState(false);
+  const [pushStatus, setPushStatus] = useState('checking');
   const autoPromptedRef = useRef(false);
 
   const creatorEmail = (currentUser?.email || '').trim().toLowerCase();
 
-  // Register Service Worker & save device push subscription to Supabase
   const registerDeviceSubscription = async () => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) return false;
     if (Notification.permission !== 'granted') return false;
@@ -74,7 +72,6 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
     }
   };
 
-  // Automatically ask the Creator for Laptop / Mobile notification permission as soon as they enter the portal
   const requestPermissionAutomatically = async () => {
     if (!('Notification' in window) || !('serviceWorker' in navigator)) return;
 
@@ -100,7 +97,6 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
     }
   };
 
-  // Sync today's scheduled targets into qc_notifications & load bell items
   const syncAndLoadNotifications = async () => {
     if (!creatorEmail) return;
 
@@ -157,73 +153,6 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
   useEffect(() => {
     syncAndLoadNotifications();
   }, [creatorEmail, creatorShows.length]);
-
-  const handleSendTestPush = async () => {
-    setTestingPush(true);
-    const sampleShow = creatorShows[0]?.show_name || 'Your Active Show';
-
-    // Ensure subscription is saved first
-    await registerDeviceSubscription();
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    try {
-      const res = await fetch('/api/send-scheduled-reminders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
-          testCreatorEmail: creatorEmail,
-          showName: sampleShow,
-          episodeLabel: 'Ep 1',
-        }),
-      });
-      clearTimeout(timeoutId);
-
-      const text = await res.text();
-      let data = {};
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error('Unexpected server response');
-      }
-
-      if (!res.ok) {
-        throw new Error(data.error || `Server error ${res.status}`);
-      }
-
-      if (data.ok && data.sentDevices > 0) {
-        alert(`Notification sent to ${data.sentDevices} device(s)! Check your laptop/mobile notification banner.`);
-      } else if (data.errors?.length > 0) {
-        alert('Push delivery error: ' + data.errors[0]);
-      } else {
-        // Fallback: trigger native Service Worker notification directly on this device
-        if ('serviceWorker' in navigator && Notification.permission === 'granted') {
-          const reg = await navigator.serviceWorker.ready;
-          await reg.showNotification(`🎬 Video Target Today — ${sampleShow}`, {
-            body: `You have a video target today to submit Ep 1 under "${sampleShow}".`,
-            icon: '/favicon.svg',
-            badge: '/favicon.svg',
-          });
-        }
-      }
-    } catch (err) {
-      clearTimeout(timeoutId);
-      // Fallback: still show native OS banner via Service Worker if permission is granted
-      if ('serviceWorker' in navigator && Notification.permission === 'granted') {
-        const reg = await navigator.serviceWorker.ready;
-        await reg.showNotification(`🎬 Video Target Today — ${sampleShow}`, {
-          body: `You have a video target today to submit Ep 1 under "${sampleShow}".`,
-          icon: '/favicon.svg',
-          badge: '/favicon.svg',
-        });
-      } else {
-        alert('Notification error: ' + (err.name === 'AbortError' ? 'Request timed out' : err.message));
-      }
-    }
-    setTestingPush(false);
-  };
 
   const handleMarkAllRead = async () => {
     if (!creatorEmail) return;
@@ -292,19 +221,9 @@ export default function CreatorNotificationBell({ currentUser, creatorShows = []
                 Notifications blocked in browser. Click the lock/tune icon in the address bar → Allow Notifications.
               </span>
             ) : pushStatus === 'granted' ? (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '11px', fontWeight: '700', color: '#166534' }}>
-                  ✓ Laptop / Mobile Alerts Active
-                </span>
-                <button
-                  type="button"
-                  disabled={testingPush}
-                  onClick={handleSendTestPush}
-                  style={bellStyles.testBtn}
-                >
-                  {testingPush ? 'Sending...' : 'Test Banner'}
-                </button>
-              </div>
+              <span style={{ fontSize: '11px', fontWeight: '700', color: '#166534' }}>
+                ✓ Laptop / Mobile Alerts Active
+              </span>
             ) : (
               <button
                 type="button"
@@ -417,16 +336,6 @@ const bellStyles = {
     borderRadius: '8px',
     padding: '8px 12px',
     fontSize: '12px',
-    fontWeight: '700',
-    cursor: 'pointer',
-  },
-  testBtn: {
-    backgroundColor: '#ffffff',
-    color: '#166534',
-    border: '1px solid #86efac',
-    borderRadius: '6px',
-    padding: '4px 8px',
-    fontSize: '11px',
     fontWeight: '700',
     cursor: 'pointer',
   },
