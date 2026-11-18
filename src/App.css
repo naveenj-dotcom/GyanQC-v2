@@ -221,7 +221,7 @@
 }
 
 /* =========================================================
-   VIDEO PLAYER & UPLOAD STAGE
+   VIDEO PLAYER & 9:16 EXACT FRAME OVERLAY STAGE
    ========================================================= */
 .video-stage {
   position: relative;
@@ -235,11 +235,41 @@
   justify-content: center;
 }
 
+.video-frame-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 68vh;
+  line-height: 0;
+}
+
 .review-video {
-  width: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
   max-height: 68vh;
   display: block;
   background-color: #000000;
+}
+
+.overlay-frame-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-frame-layer img,
+.overlay-frame-layer canvas {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: fill !important;
 }
 
 .fullscreen-button {
@@ -706,8 +736,8 @@
     max-height: 36vh !important;
   }
 
+  .studio-mobile-active .video-frame-wrapper,
   .studio-mobile-active .review-video {
     max-height: 36vh !important;
-    object-fit: contain !important;
   }
 }

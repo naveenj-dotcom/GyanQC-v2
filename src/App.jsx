@@ -421,6 +421,7 @@ export default function App() {
     }
 
     loadEpisodeIntoPlayer(match);
+    setEpSearchQuery("");
   };
 
   const handleVideoUpload = (event) => {
@@ -573,21 +574,6 @@ export default function App() {
 
   const isStaff = currentUser.role === "qcstar" || currentUser.role === "admin";
   const isMonthlyPlannerPage = isStaff && qcstarView === "monthly-planner";
-
-  const pendingShowEpisodes = showEpisodes.filter(
-    (ep) => ep.status !== "Approved" && ep.status !== "Not Submitted"
-  );
-
-  const filteredTopEpisodes = epSearchQuery.trim()
-    ? showEpisodes.filter((ep) => {
-        const q = epSearchQuery.trim().toLowerCase().replace(/^ep\s*/i, "");
-        return (
-          ep.status !== "Not Submitted" &&
-          (String(ep.episode_number).includes(q) ||
-            (ep.ep_name || "").toLowerCase().includes(q))
-        );
-      })
-    : pendingShowEpisodes;
 
   const portalActiveTab =
     qcstarView === "creators" || qcstarView === "manage-shows"
@@ -834,143 +820,10 @@ export default function App() {
         />
       ) : (
         <div className={`qc-workspace ${isMobile && videoUrl ? "studio-mobile-active" : ""}`}>
-          {/* LEFT / TOP COLUMN: 1. EPISODE SEARCH & SWITCHER -> 2. VIDEO PLAYER */}
-          <section className="video-column" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {/* 1. EPISODE NUMBER SEARCH & PENDING SWITCHER AT TOP OF VIDEO */}
-            {selectedShow && (activeEpisode || showEpisodes.length > 0) && (
-              <div className="panel" style={{ padding: isMobile ? "10px 12px" : "14px 16px" }}>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: "8px",
-                    marginBottom: "8px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <h3 style={{ margin: 0, fontSize: isMobile ? "14px" : "15px", color: "#0f172a" }}>
-                    {selectedShow.show_name} — Pending ({pendingShowEpisodes.length})
-                  </h3>
-
-                  {/* Search by Episode Number (for 200+ episodes) + Refresh */}
-                  <form
-                    onSubmit={handleEpisodeNumberSearch}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={epSearchQuery}
-                      onChange={(e) => setEpSearchQuery(e.target.value)}
-                      placeholder="Ep # (e.g. 200)"
-                      style={{
-                        width: "120px",
-                        height: "30px",
-                        padding: "4px 9px",
-                        borderRadius: "7px",
-                        border: "1px solid #cbd5e1",
-                        fontSize: "13px",
-                        backgroundColor: "#ffffff",
-                      }}
-                    />
-                    <button
-                      type="submit"
-                      className="primary-button"
-                      style={{
-                        height: "30px",
-                        padding: "0 10px",
-                        fontSize: "12px",
-                        borderRadius: "7px",
-                      }}
-                    >
-                      🔍 Go
-                    </button>
-                    {epSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => setEpSearchQuery("")}
-                        className="secondary-button"
-                        style={{
-                          height: "30px",
-                          padding: "0 8px",
-                          fontSize: "11px",
-                          borderRadius: "7px",
-                        }}
-                      >
-                        ✕
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => fetchEpisodesForShow(selectedShow.id)}
-                      className="secondary-button"
-                      style={{
-                        height: "30px",
-                        padding: "0 9px",
-                        fontSize: "11px",
-                        borderRadius: "7px",
-                      }}
-                    >
-                      ↻
-                    </button>
-                  </form>
-                </div>
-
-                {filteredTopEpisodes.length === 0 ? (
-                  <p style={{ fontSize: "12px", color: epSearchQuery ? "#64748b" : "#15803d", margin: 0, fontWeight: "600" }}>
-                    {epSearchQuery
-                      ? `No submitted episode matching "${epSearchQuery}"`
-                      : "✓ All submitted episodes have been approved!"}
-                  </p>
-                ) : (
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      overflowX: "auto",
-                      paddingBottom: "2px",
-                    }}
-                  >
-                    {filteredTopEpisodes.map((ep) => {
-                      const isCurrent = activeEpisode?.id === ep.id;
-                      return (
-                        <button
-                          key={ep.id}
-                          type="button"
-                          onClick={() => loadEpisodeIntoPlayer(ep)}
-                          style={{
-                            flexShrink: 0,
-                            textAlign: "left",
-                            padding: "6px 10px",
-                            borderRadius: "8px",
-                            border: isCurrent ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
-                            backgroundColor: isCurrent ? "#eff6ff" : "#f8fafc",
-                            cursor: "pointer",
-                            minWidth: "135px",
-                          }}
-                        >
-                          <strong style={{ fontSize: "12px", color: "#0f172a", display: "block" }}>
-                            Ep {ep.episode_number}: {ep.ep_name || "Untitled"}
-                          </strong>
-                          <span style={{ fontSize: "10px", color: "#64748b" }}>
-                            {ep.scheduled_date || "No date"} · {ep.status}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 2. VIDEO PLAYER */}
+          {/* LEFT / TOP COLUMN: VIDEO PLAYER WITH COMPACT EPISODE # SEARCH */}
+          <section className="video-column">
             <div className="panel video-panel">
-              <div className="panel-heading" style={{ marginBottom: isMobile ? "8px" : undefined }}>
+              <div className="panel-heading" style={{ marginBottom: isMobile ? "8px" : "12px" }}>
                 <div>
                   <h3 style={{ fontSize: isMobile ? "15px" : undefined }}>
                     {videoName || "Video Review"}
@@ -978,13 +831,50 @@ export default function App() {
                   {!isMobile && (
                     <p>
                       {activeEpisode && selectedShow
-                        ? `Show: ${selectedShow.show_name} (${selectedShow.agency_name || selectedShow.creator_name || ""})`
+                        ? `Show: ${selectedShow.show_name}`
                         : "Upload any local video or paste a Google Drive link for quick QC."}
                     </p>
                   )}
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                  {/* Compact Jump-to-Episode # Search (handles 200+ episodes) */}
+                  {selectedShow && showEpisodes.length > 0 && (
+                    <form
+                      onSubmit={handleEpisodeNumberSearch}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                    >
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={epSearchQuery}
+                        onChange={(e) => setEpSearchQuery(e.target.value)}
+                        placeholder="Ep # (200)"
+                        style={{
+                          width: "84px",
+                          height: "28px",
+                          padding: "2px 8px",
+                          borderRadius: "6px",
+                          border: "1px solid #cbd5e1",
+                          fontSize: "12px",
+                          backgroundColor: "#ffffff",
+                        }}
+                      />
+                      <button
+                        type="submit"
+                        className="primary-button"
+                        style={{
+                          height: "28px",
+                          padding: "0 9px",
+                          fontSize: "11px",
+                          borderRadius: "6px",
+                        }}
+                      >
+                        🔍 Go
+                      </button>
+                    </form>
+                  )}
+
                   <button
                     className="secondary-button"
                     type="button"
@@ -1014,7 +904,7 @@ export default function App() {
 
               <div ref={stageRef} className="video-stage">
                 {videoUrl ? (
-                  <>
+                  <div className="video-frame-wrapper">
                     <video
                       ref={videoRef}
                       className="review-video"
@@ -1049,7 +939,7 @@ export default function App() {
                       }}
                     />
 
-                    <div style={{ pointerEvents: "none" }}>
+                    <div className="overlay-frame-layer">
                       <ReferenceOverlay
                         src={activeOverlayUrl}
                         visible={overlayVisible}
@@ -1079,7 +969,7 @@ export default function App() {
                         <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M3 16v3a2 2 0 0 0 2 2h3" />
                       </svg>
                     </button>
-                  </>
+                  </div>
                 ) : (
                   <div className="video-upload-placeholder">
                     <button
