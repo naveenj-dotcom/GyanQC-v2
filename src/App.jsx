@@ -1,4 +1,4 @@
-import { getStreamUrl, isVideoCached, abortOtherDownloads, warmVideoToRam, upgradeVideoElementToBlob } from "./utils/videoStreamCache";
+import { getStreamUrl, getAdaptiveDriveUrl, isVideoCached, abortOtherDownloads, warmVideoToRam, upgradeVideoElementToBlob } from "./utils/videoStreamCache";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReferenceOverlay from "./ReferenceOverlay";
 import Login from "./components/Login";
@@ -177,6 +177,8 @@ export default function App() {
   const [driveUrl, setDriveUrl] = useState("");
   const [driveError, setDriveError] = useState("");
   const [isBuffering, setIsBuffering] = useState(false);
+  const [streamMode, setStreamMode] = useState("adaptive");
+  const [adaptiveSeekSec, setAdaptiveSeekSec] = useState(0);
   const [overlayVisible, setOverlayVisible] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [comment, setComment] = useState("");
@@ -448,6 +450,7 @@ export default function App() {
       videoRef.current.removeAttribute("src");
       videoRef.current.load();
     }
+    setAdaptiveSeekSec(0);
     setVideoUrl(getStreamUrl(ep.drive_file_id));
     if (isVideoCached(ep.drive_file_id)) setIsBuffering(false);
       warmDriveVideoToBlob(ep.drive_file_id, { swapIfActive: true });
@@ -652,10 +655,15 @@ export default function App() {
   };
 
   const jumpToTime = (time) => {
+    const target = Math.max(0, Number(time) || 0);
+    lastSecondRef.current = Math.floor(target);
+    setCurrentTime(target);
+    if (streamMode === "adaptive" && activeEpisode?.drive_file_id) {
+      setAdaptiveSeekSec(Math.floor(target));
+      return;
+    }
     if (!videoRef.current) return;
-    videoRef.current.currentTime = time;
-    lastSecondRef.current = Math.floor(time);
-    setCurrentTime(time);
+    videoRef.current.currentTime = target;
     videoRef.current.play().catch(() => {});
   };
 
@@ -1087,51 +1095,58 @@ export default function App() {
               <div ref={stageRef} className="video-stage">
                 {videoUrl ? (
                   <div className="video-frame-wrapper" style={{ aspectRatio: "9 / 16", height: "100%", maxHeight: "100%" }}>
-                    <video
-                      ref={videoRef}
-                      className="review-video"
-                      src={videoUrl}
-                      preload="auto"
-                      controls
-                      playsInline
-                      controlsList="nofullscreen noremoteplayback"
-                      disablePictureInPicture
-                      style={{
-                        transform: "translateZ(0)",
-                        willChange: "transform",
-                      }}
-                      onWaiting={() => setIsBuffering(true)}
-                      onCanPlay={() => {
-                        setIsBuffering(false);
-                        if (activeEpisode && Array.isArray(showEpisodes)) {
-                          const submitted = [...showEpisodes]
-                            .filter((item) => Boolean(item.drive_file_id))
-                            .sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0));
-                          const idx = submitted.findIndex((item) => item.id === activeEpisode.id);
-                          const nextEp = idx >= 0 ? submitted[idx + 1] : null;
-                          if (nextEp?.drive_file_id) {
-                            setTimeout(() => warmVideoToRam(nextEp.drive_file_id), 2000);
+                    {streamMode === "adaptive" && activeEpisode?.drive_file_id ? (
+                      <iframe
+                        key={`${activeEpisode.drive_file_id}-${adaptiveSeekSec}`}
+                        src={getAdaptiveDriveUrl(activeEpisode.drive_file_id, adaptiveSeekSec)}
+                        title={videoName || "Episode Preview"}
+                        allow="autoplay; fullscreen"
+                        allowFullScreen
+                        onLoad={() => setIsBuffering(false)}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          aspectRatio: "9 / 16",
+                          border: 0,
+                          display: "block",
+                          background: "#000",
+                        }}
+                      />
+                    ) : (
+                      <video
+                        ref={videoRef}
+                        className="review-video"
+                        src={videoUrl}
+                        preload="metadata"
+                        controls
+                        playsInline
+                        controlsList="nofullscreen noremoteplayback"
+                        disablePictureInPicture
+                        style={{
+                          transform: "translateZ(0)",
+                          willChange: "transform",
+                        }}
+                        onWaiting={() => setIsBuffering(true)}
+                        onCanPlay={() => setIsBuffering(false)}
+                        onPlaying={() => setIsBuffering(false)}
+                        onTimeUpdate={() => {
+                          const t = videoRef.current?.currentTime || 0;
+                          const wholeSecond = Math.floor(t);
+                          if (wholeSecond !== lastSecondRef.current) {
+                            lastSecondRef.current = wholeSecond;
+                            setCurrentTime(t);
                           }
-                        }
-                      }}
-                      onPlaying={() => setIsBuffering(false)}
-                      onTimeUpdate={() => {
-                        const t = videoRef.current?.currentTime || 0;
-                        const wholeSecond = Math.floor(t);
-                        if (wholeSecond !== lastSecondRef.current) {
-                          lastSecondRef.current = wholeSecond;
-                          setCurrentTime(t);
-                        }
-                      }}
-                      onError={() => {
-                        setIsBuffering(false);
-                        if (videoUrl.startsWith(VIDEO_PROXY_URL)) {
-                          setDriveError(
-                            "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
-                          );
-                        }
-                      }}
-                    />
+                        }}
+                        onError={() => {
+                          setIsBuffering(false);
+                          if (videoUrl.startsWith(VIDEO_PROXY_URL)) {
+                            setDriveError(
+                              "Could not stream video. Make sure the Google Drive file is shared as 'Anyone with the link'."
+                            );
+                          }
+                        }}
+                      />
+                    )}
 
                     <div className="overlay-frame-layer">
                       <ReferenceOverlay

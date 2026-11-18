@@ -1,4 +1,4 @@
-import { getStreamUrl, abortOtherDownloads, upgradeVideoElementToBlob } from "../utils/videoStreamCache";
+import { getStreamUrl, getAdaptiveDriveUrl } from "../utils/videoStreamCache";
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import ReferenceOverlay from '../ReferenceOverlay';
@@ -1268,19 +1268,38 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
 
             <div className="video-stage" style={{ minHeight: '360px', marginBottom: '12px' }}>
               <div className="video-frame-wrapper" style={{ maxHeight: '55vh' }}>
-                <video
-                  ref={videoRef}
-                  src={getStreamUrl(previewEp.drive_file_id)}
-                  controls
-                  playsInline
-                  className="review-video"
-                  style={{ maxHeight: '55vh' }}
-                  onError={() =>
-                    setPreviewError(
-                      'Could not stream video. Check that Google Drive access is set to "Anyone with the link".'
-                    )
-                  }
-                />
+                {creatorStreamMode === "adaptive" ? (
+                  <iframe
+                    key={`${previewEp.drive_file_id}-${creatorSeekSec}`}
+                    src={getAdaptiveDriveUrl(previewEp.drive_file_id, creatorSeekSec)}
+                    title={`Ep ${previewEp.episode_number}`}
+                    allow="autoplay; fullscreen"
+                    allowFullScreen
+                    style={{
+                      width: "100%",
+                      height: "55vh",
+                      aspectRatio: "9 / 16",
+                      border: 0,
+                      display: "block",
+                      background: "#000",
+                    }}
+                  />
+                ) : (
+                  <video
+                    ref={videoRef}
+                    src={getStreamUrl(previewEp.drive_file_id)}
+                    preload="metadata"
+                    controls
+                    playsInline
+                    className="review-video"
+                    style={{ maxHeight: "55vh" }}
+                    onError={() =>
+                      setPreviewError(
+                        'Could not stream video. Check that Google Drive access is set to "Anyone with the link".'
+                      )
+                    }
+                  />
+                )}
                 <div className="overlay-frame-layer">
                   <ReferenceOverlay
                     src={overlayUrl || '/default-overlay.png'}
@@ -1322,7 +1341,9 @@ export default function CreatorDashboard({ currentUser, show, overlayUrl }) {
                       <button
                         type="button"
                         onClick={() => {
-                          if (videoRef.current) {
+                          if (creatorStreamMode === "adaptive") {
+                            setCreatorSeekSec(Math.floor(Number(fb.time) || 0));
+                          } else if (videoRef.current) {
                             videoRef.current.currentTime = fb.time;
                             videoRef.current.play().catch(() => {});
                           }
