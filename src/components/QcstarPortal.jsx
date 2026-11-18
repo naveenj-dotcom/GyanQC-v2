@@ -222,12 +222,13 @@ export default function QcstarPortal({
       .neq('status', 'Not Submitted');
 
     if (!error && data) {
-      const pendingList = sortLatestFirst(data.filter((ep) => ep.status !== 'Approved'));
-      setPendingVideos(pendingList);
-      setApprovedShowVideos(sortLatestFirst(data.filter((ep) => ep.status === 'Approved')));
+      const allSorted = sortLatestFirst(data);
+      const pendingOnly = allSorted.filter((ep) => ep.status !== 'Approved');
+      setPendingVideos(allSorted);
+      setApprovedShowVideos(allSorted.filter((ep) => ep.status === 'Approved'));
       setPendingCountsByShow((prev) => ({
         ...prev,
-        [showObj.id]: pendingList.length,
+        [showObj.id]: pendingOnly.length,
       }));
     } else {
       setPendingVideos([]);
@@ -1349,48 +1350,35 @@ export default function QcstarPortal({
               </div>
             </div>
 
-            {/* Sub-Tab Switcher: Pending QC vs Approved Videos */}
-            <div style={styles.subTabBar}>
-              <button
-                type="button"
-                onClick={() => setQueueSubTab('pending')}
-                style={
-                  queueSubTab === 'pending'
-                    ? styles.subTabActive
-                    : styles.subTabInactive
-                }
-              >
-                Pending QC ({pendingVideos.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setQueueSubTab('approved')}
-                style={
-                  queueSubTab === 'approved'
-                    ? styles.subTabActiveGreen
-                    : styles.subTabInactive
-                }
-              >
-                ✓ Approved Videos — Google Drive ({approvedShowVideos.length})
-              </button>
+            {/* Unified Episode List Header Summary */}
+            <div style={{ display: "flex", gap: "10px", marginBottom: "14px", flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ backgroundColor: "#eff6ff", color: "#1e3a8a", border: "1px solid #bfdbfe", padding: "5px 12px", borderRadius: "999px", fontSize: "12px", fontWeight: "700" }}>
+                Total Episodes: {pendingVideos.length}
+              </span>
+              <span style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a", padding: "5px 12px", borderRadius: "999px", fontSize: "12px", fontWeight: "700" }}>
+                Pending QC: {pendingVideos.filter((ep) => ep.status !== "Approved").length}
+              </span>
+              <span style={{ backgroundColor: "#dcfce7", color: "#166534", border: "1px solid #bbf7d0", padding: "5px 12px", borderRadius: "999px", fontSize: "12px", fontWeight: "700" }}>
+                ✓ Approved: {approvedShowVideos.length}
+              </span>
             </div>
 
             {/* Search by Episode Number or Name (handles 200+ episodes) */}
-            <div style={{ marginBottom: '14px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ marginBottom: "14px", display: "flex", gap: "8px", alignItems: "center" }}>
               <input
                 type="text"
                 inputMode="numeric"
                 placeholder="Search by Episode # (e.g. 200) or Episode Name..."
                 value={queueEpSearch}
                 onChange={(e) => setQueueEpSearch(e.target.value)}
-                style={{ ...styles.input, maxWidth: '340px' }}
+                style={{ ...styles.input, maxWidth: "360px" }}
               />
               {queueEpSearch && (
                 <button
                   type="button"
-                  onClick={() => setQueueEpSearch('')}
+                  onClick={() => setQueueEpSearch("")}
                   className="secondary-button"
-                  style={{ padding: '8px 12px', fontSize: '12px' }}
+                  style={{ padding: "8px 12px", fontSize: "12px" }}
                 >
                   Clear
                 </button>
@@ -1398,150 +1386,127 @@ export default function QcstarPortal({
             </div>
 
             {loadingQueue ? (
-              <p style={{ color: '#64748b' }}>Loading episodes...</p>
-            ) : queueSubTab === 'pending' ? (
-              filteredPendingVideos.length === 0 ? (
-                <div style={styles.emptyBox}>
-                  <strong>
-                    {queueEpSearch
-                      ? `No pending episode matching "${queueEpSearch}".`
-                      : `All caught up! No pending videos to QC for ${selectedShowForQueue.show_name}.`}
-                  </strong>
-                  <span>
-                    {queueEpSearch
-                      ? 'Try searching another episode number or clear the search.'
-                      : 'New or re-edited submissions will appear right at the top.'}
-                  </span>
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {filteredPendingVideos.map((ep, index) => {
-                    const isReedited = Boolean(ep.reviewed_by) && ep.status === 'Pending';
-                    return (
-                      <div
-                        key={ep.id}
-                        style={{
-                          ...styles.pendingEpRow,
-                          borderColor: index === 0 ? '#93c5fd' : '#e2e8f0',
-                          backgroundColor: index === 0 ? '#eff6ff' : '#f8fafc',
-                        }}
-                      >
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <span style={styles.epPill}>Ep {ep.episode_number}</span>
-                            {isReedited && (
-                              <span style={styles.reeditedBadge}>↻ RE-EDITED</span>
-                            )}
-                            {index === 0 && !isReedited && (
-                              <span style={styles.latestBadge}>LATEST</span>
-                            )}
-                            <strong style={{ fontSize: '15px', color: '#0f172a' }}>
-                              {ep.ep_name || `Episode ${ep.episode_number}`}
-                            </strong>
-                          </div>
-                          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                            Scheduled Date: <strong>{ep.scheduled_date || 'Not set'}</strong>
-                            {ep.updated_at && (
-                              <>
-                                {' '}
-                                · Updated:{' '}
-                                <strong>
-                                  {new Date(ep.updated_at).toLocaleString([], {
-                                    month: 'short',
-                                    day: 'numeric',
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                  })}
-                                </strong>
-                              </>
-                            )}
-                          </p>
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span className={`review-status ${ep.status.toLowerCase().replace(' ', '-')}`}>
-                            {ep.status}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => onOpenEpisodeInStudio(selectedShowForQueue, ep)}
-                            className="primary-button"
-                          >
-                            Open in QC Studio →
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )
-            ) : filteredApprovedVideos.length === 0 ? (
+              <p style={{ color: "#64748b" }}>Loading episodes...</p>
+            ) : filteredPendingVideos.length === 0 ? (
               <div style={styles.emptyBox}>
                 <strong>
                   {queueEpSearch
-                    ? `No approved episode matching "${queueEpSearch}".`
-                    : `No approved videos yet for ${selectedShowForQueue.show_name}.`}
+                    ? `No episode matching "${queueEpSearch}".`
+                    : `No submitted episodes yet for ${selectedShowForQueue.show_name}.`}
                 </strong>
                 <span>
                   {queueEpSearch
-                    ? 'Try searching another episode number or clear the search.'
-                    : 'Once an episode is approved in QC Studio, its Google Drive download link will appear here.'}
+                    ? "Try searching another episode number or clear the search."
+                    : "Submitted episodes will appear here with QC Studio and Google Drive links."}
                 </span>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {filteredApprovedVideos.map((ep) => {
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                {filteredPendingVideos.map((ep, index) => {
+                  const isApproved = ep.status === "Approved";
+                  const isReedited = Boolean(ep.reviewed_by) && ep.status === "Pending";
                   const { viewUrl, downloadUrl } = getDriveLinks(ep);
                   const hasDrive = Boolean(viewUrl || downloadUrl);
 
                   return (
-                    <div key={ep.id} style={styles.approvedEpRow}>
+                    <div
+                      key={ep.id}
+                      style={
+                        isApproved
+                          ? styles.approvedEpRow
+                          : {
+                              ...styles.pendingEpRow,
+                              borderColor: index === 0 ? "#93c5fd" : "#e2e8f0",
+                              backgroundColor: index === 0 ? "#eff6ff" : "#f8fafc",
+                            }
+                      }
+                    >
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{ ...styles.epPill, backgroundColor: '#15803d' }}>
-                            Ep {ep.episode_number} ✓
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              ...styles.epPill,
+                              backgroundColor: isApproved ? "#15803d" : "#0f172a",
+                            }}
+                          >
+                            Ep {ep.episode_number} {isApproved ? "✓" : ""}
                           </span>
-                          <strong style={{ fontSize: '15px', color: '#0f172a' }}>
+                          {isReedited && (
+                            <span style={styles.reeditedBadge}>↻ RE-EDITED</span>
+                          )}
+                          {index === 0 && !isReedited && (
+                            <span style={styles.latestBadge}>LATEST</span>
+                          )}
+                          <strong style={{ fontSize: "15px", color: "#0f172a" }}>
                             {ep.ep_name || `Episode ${ep.episode_number}`}
                           </strong>
                         </div>
-                        <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-                          Scheduled Date: <strong>{ep.scheduled_date || 'Not set'}</strong>
+                        <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#64748b" }}>
+                          Scheduled Date: <strong>{ep.scheduled_date || "Not set"}</strong>
+                          {ep.updated_at && (
+                            <>
+                              {" "}
+                              · Updated:{" "}
+                              <strong>
+                                {new Date(ep.updated_at).toLocaleString([], {
+                                  month: "short",
+                                  day: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </strong>
+                            </>
+                          )}
                         </p>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        {hasDrive ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        {isApproved ? (
+                          hasDrive ? (
+                            <>
+                              <a
+                                href={downloadUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={styles.driveDownloadBtn}
+                              >
+                                ⬇ Download (Google Drive)
+                              </a>
+                              <a
+                                href={viewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={styles.driveViewBtn}
+                              >
+                                Open in Drive ↗
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleCopyDriveLink(viewUrl, ep.id)}
+                                className="secondary-button"
+                                style={{ padding: "7px 11px", fontSize: "12px" }}
+                              >
+                                {copiedId === ep.id ? "✓ Copied" : "Copy Link"}
+                              </button>
+                            </>
+                          ) : (
+                            <span style={{ fontSize: "12px", color: "#94a3b8", fontStyle: "italic" }}>
+                              Approved · No Google Drive link attached
+                            </span>
+                          )
+                        ) : (
                           <>
-                            <a
-                              href={downloadUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={styles.driveDownloadBtn}
-                            >
-                              ⬇ Download (Google Drive)
-                            </a>
-                            <a
-                              href={viewUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={styles.driveViewBtn}
-                            >
-                              Open in Drive ↗
-                            </a>
+                            <span className={`review-status ${ep.status.toLowerCase().replace(" ", "-")}`}>
+                              {ep.status}
+                            </span>
                             <button
                               type="button"
-                              onClick={() => handleCopyDriveLink(viewUrl, ep.id)}
-                              className="secondary-button"
-                              style={{ padding: '7px 11px', fontSize: '12px' }}
+                              onClick={() => onOpenEpisodeInStudio(selectedShowForQueue, ep)}
+                              className="primary-button"
                             >
-                              {copiedId === ep.id ? '✓ Copied' : 'Copy Link'}
+                              Open in QC Studio →
                             </button>
                           </>
-                        ) : (
-                          <span style={{ fontSize: '12px', color: '#94a3b8', fontStyle: 'italic' }}>
-                            No Google Drive link attached
-                          </span>
                         )}
                       </div>
                     </div>
