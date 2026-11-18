@@ -13,14 +13,6 @@ import "./App.css";
 const DEFAULT_OVERLAY_URL = "/default-overlay.png";
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
 
-const QUICK_QC_CHIPS = [
-  "Subtitle safe-zone cut",
-  "Audio sync / low volume",
-  "Frame crop / framing",
-  "Low res / blur",
-  "Logo overlap",
-];
-
 function getSavedSessionUser() {
   try {
     const saved = localStorage.getItem("gyanqc_user");
@@ -56,7 +48,6 @@ export default function App() {
   const [appLogoUrl, setAppLogoUrl] = useState("");
   const [totalPendingCount, setTotalPendingCount] = useState(0);
 
-  // Detect mobile viewport & keyboard open state
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth < 768 : false
   );
@@ -124,6 +115,7 @@ export default function App() {
   const [selectedShow, setSelectedShow] = useState(null);
   const [showEpisodes, setShowEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState(null);
+  const [epSearchQuery, setEpSearchQuery] = useState("");
   const [savingReview, setSavingReview] = useState(false);
 
   const videoRef = useRef(null);
@@ -403,6 +395,34 @@ export default function App() {
     setStatus(ep.status === "Not Submitted" ? "Pending" : ep.status);
   };
 
+  const handleEpisodeNumberSearch = (e) => {
+    e.preventDefault();
+    const q = epSearchQuery.trim().toLowerCase();
+    if (!q) return;
+
+    const exactNum = Number(q.replace(/^ep\s*/i, ""));
+    const match =
+      (!Number.isNaN(exactNum) &&
+        showEpisodes.find((ep) => Number(ep.episode_number) === exactNum)) ||
+      showEpisodes.find(
+        (ep) =>
+          String(ep.episode_number).includes(q) ||
+          (ep.ep_name || "").toLowerCase().includes(q)
+      );
+
+    if (!match) {
+      alert(`Episode "${epSearchQuery.trim()}" was not found in ${selectedShow?.show_name || "this Show"}.`);
+      return;
+    }
+
+    if (!match.drive_file_id) {
+      alert(`Ep ${match.episode_number} has no video link submitted yet.`);
+      return;
+    }
+
+    loadEpisodeIntoPlayer(match);
+  };
+
   const handleVideoUpload = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -471,7 +491,6 @@ export default function App() {
     }
   };
 
-  // Auto-pause video when user taps to type feedback so the frame timestamp stays locked
   const handleFeedbackFocus = () => {
     if (videoRef.current && !videoRef.current.paused) {
       videoRef.current.pause();
@@ -479,9 +498,8 @@ export default function App() {
     }
   };
 
-  const addFeedback = (customText = null) => {
-    const raw = typeof customText === "string" ? customText : comment;
-    const message = raw.trim();
+  const addFeedback = () => {
+    const message = comment.trim();
     if (!message || !videoUrl) return;
 
     const exactTime = videoRef.current ? videoRef.current.currentTime : currentTime;
@@ -495,9 +513,7 @@ export default function App() {
       },
     ]);
 
-    if (typeof customText !== "string") {
-      setComment("");
-    }
+    setComment("");
   };
 
   const handleSaveDecision = async (newStatus) => {
@@ -562,6 +578,17 @@ export default function App() {
     (ep) => ep.status !== "Approved" && ep.status !== "Not Submitted"
   );
 
+  const filteredTopEpisodes = epSearchQuery.trim()
+    ? showEpisodes.filter((ep) => {
+        const q = epSearchQuery.trim().toLowerCase().replace(/^ep\s*/i, "");
+        return (
+          ep.status !== "Not Submitted" &&
+          (String(ep.episode_number).includes(q) ||
+            (ep.ep_name || "").toLowerCase().includes(q))
+        );
+      })
+    : pendingShowEpisodes;
+
   const portalActiveTab =
     qcstarView === "creators" || qcstarView === "manage-shows"
       ? "shows"
@@ -573,6 +600,7 @@ export default function App() {
     setVideoName("");
     setDriveUrl("");
     setDriveError("");
+    setEpSearchQuery("");
     resetFeedbackHistory([]);
     setStatus("Pending");
     navigateQcstar("studio");
@@ -797,6 +825,7 @@ export default function App() {
           }}
           onOpenEpisodeInStudio={(showObj, epObj) => {
             setSelectedShow(showObj);
+            setEpSearchQuery("");
             fetchEpisodesForShow(showObj.id);
             navigateQcstar("studio");
             setTimeout(() => loadEpisodeIntoPlayer(epObj), 100);
@@ -805,38 +834,98 @@ export default function App() {
         />
       ) : (
         <div className={`qc-workspace ${isMobile && videoUrl ? "studio-mobile-active" : ""}`}>
-          {/* LEFT / TOP COLUMN: 1. PENDING EPISODES SWITCHER -> 2. VIDEO PLAYER + INSTANT MOBILE BAR */}
+          {/* LEFT / TOP COLUMN: 1. EPISODE SEARCH & SWITCHER -> 2. VIDEO PLAYER */}
           <section className="video-column" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-            {/* 1. PENDING EPISODES SWITCHER AT TOP OF VIDEO */}
-            {activeEpisode && selectedShow && (
+            {/* 1. EPISODE NUMBER SEARCH & PENDING SWITCHER AT TOP OF VIDEO */}
+            {selectedShow && (activeEpisode || showEpisodes.length > 0) && (
               <div className="panel" style={{ padding: isMobile ? "10px 12px" : "14px 16px" }}>
                 <div
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    gap: "10px",
+                    gap: "8px",
                     marginBottom: "8px",
+                    flexWrap: "wrap",
                   }}
                 >
-                  <div>
-                    <h3 style={{ margin: 0, fontSize: isMobile ? "14px" : "15px", color: "#0f172a" }}>
-                      {selectedShow.show_name} — Pending ({pendingShowEpisodes.length})
-                    </h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => fetchEpisodesForShow(selectedShow.id)}
-                    className="secondary-button"
-                    style={{ padding: "4px 9px", fontSize: "11px", flexShrink: 0 }}
+                  <h3 style={{ margin: 0, fontSize: isMobile ? "14px" : "15px", color: "#0f172a" }}>
+                    {selectedShow.show_name} — Pending ({pendingShowEpisodes.length})
+                  </h3>
+
+                  {/* Search by Episode Number (for 200+ episodes) + Refresh */}
+                  <form
+                    onSubmit={handleEpisodeNumberSearch}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
                   >
-                    ↻ Refresh
-                  </button>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={epSearchQuery}
+                      onChange={(e) => setEpSearchQuery(e.target.value)}
+                      placeholder="Ep # (e.g. 200)"
+                      style={{
+                        width: "120px",
+                        height: "30px",
+                        padding: "4px 9px",
+                        borderRadius: "7px",
+                        border: "1px solid #cbd5e1",
+                        fontSize: "13px",
+                        backgroundColor: "#ffffff",
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      style={{
+                        height: "30px",
+                        padding: "0 10px",
+                        fontSize: "12px",
+                        borderRadius: "7px",
+                      }}
+                    >
+                      🔍 Go
+                    </button>
+                    {epSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setEpSearchQuery("")}
+                        className="secondary-button"
+                        style={{
+                          height: "30px",
+                          padding: "0 8px",
+                          fontSize: "11px",
+                          borderRadius: "7px",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => fetchEpisodesForShow(selectedShow.id)}
+                      className="secondary-button"
+                      style={{
+                        height: "30px",
+                        padding: "0 9px",
+                        fontSize: "11px",
+                        borderRadius: "7px",
+                      }}
+                    >
+                      ↻
+                    </button>
+                  </form>
                 </div>
 
-                {pendingShowEpisodes.length === 0 ? (
-                  <p style={{ fontSize: "12px", color: "#15803d", margin: 0, fontWeight: "600" }}>
-                    ✓ All submitted episodes have been approved!
+                {filteredTopEpisodes.length === 0 ? (
+                  <p style={{ fontSize: "12px", color: epSearchQuery ? "#64748b" : "#15803d", margin: 0, fontWeight: "600" }}>
+                    {epSearchQuery
+                      ? `No submitted episode matching "${epSearchQuery}"`
+                      : "✓ All submitted episodes have been approved!"}
                   </p>
                 ) : (
                   <div
@@ -847,7 +936,7 @@ export default function App() {
                       paddingBottom: "2px",
                     }}
                   >
-                    {pendingShowEpisodes.map((ep) => {
+                    {filteredTopEpisodes.map((ep) => {
                       const isCurrent = activeEpisode?.id === ep.id;
                       return (
                         <button
@@ -862,7 +951,7 @@ export default function App() {
                             border: isCurrent ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
                             backgroundColor: isCurrent ? "#eff6ff" : "#f8fafc",
                             cursor: "pointer",
-                            minWidth: "140px",
+                            minWidth: "135px",
                           }}
                         >
                           <strong style={{ fontSize: "12px", color: "#0f172a", display: "block" }}>
@@ -1036,43 +1125,8 @@ export default function App() {
                     marginTop: "10px",
                     paddingTop: "10px",
                     borderTop: "1px solid #e2e8f0",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "8px",
                   }}
                 >
-                  {/* Horizontal scrollable quick QC chips */}
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "6px",
-                      overflowX: "auto",
-                      paddingBottom: "2px",
-                    }}
-                  >
-                    {QUICK_QC_CHIPS.map((chip) => (
-                      <button
-                        key={chip}
-                        type="button"
-                        onClick={() => addFeedback(chip)}
-                        style={{
-                          flexShrink: 0,
-                          backgroundColor: "#eff6ff",
-                          border: "1px solid #bfdbfe",
-                          borderRadius: "999px",
-                          padding: "4px 10px",
-                          fontSize: "11px",
-                          fontWeight: "700",
-                          color: "#1e3a8a",
-                          cursor: "pointer",
-                        }}
-                      >
-                        + {chip}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Single-row Timestamp + Input + Add button so Video & Keyboard fit together */}
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -1103,7 +1157,7 @@ export default function App() {
                       value={comment}
                       onFocus={handleFeedbackFocus}
                       onChange={(e) => setComment(e.target.value)}
-                      placeholder="Type QC feedback & press Enter..."
+                      placeholder="Describe what needs to be corrected..."
                       style={{
                         flex: 1,
                         minWidth: 0,
@@ -1167,7 +1221,7 @@ export default function App() {
             </div>
           </section>
 
-          {/* RIGHT / BELOW VIDEO COLUMN: FEEDBACK TIMELINE & APPROVE/REJECT ACTIONS */}
+          {/* RIGHT / BELOW VIDEO COLUMN: FEEDBACK BOX (DESKTOP) + TIMELINE & APPROVE/REJECT */}
           <section className="right-column">
             <div className="panel feedback-panel">
               {!isMobile && (
@@ -1175,7 +1229,6 @@ export default function App() {
                   <div className="panel-heading">
                     <div>
                       <h3>QC Feedback</h3>
-                      <p>Video auto-pauses when typing so your timestamp stays exact.</p>
                     </div>
 
                     <span className="feedback-count">{feedback.length}</span>
@@ -1186,30 +1239,6 @@ export default function App() {
                       <span>Current Video Timestamp</span>
                       <strong>{formatTime(currentTime)}</strong>
                     </div>
-
-                    {videoUrl && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
-                        {QUICK_QC_CHIPS.map((chip) => (
-                          <button
-                            key={chip}
-                            type="button"
-                            onClick={() => addFeedback(chip)}
-                            style={{
-                              backgroundColor: "#f1f5f9",
-                              border: "1px solid #cbd5e1",
-                              borderRadius: "999px",
-                              padding: "4px 10px",
-                              fontSize: "11px",
-                              fontWeight: "600",
-                              color: "#1e293b",
-                              cursor: "pointer",
-                            }}
-                          >
-                            + {chip}
-                          </button>
-                        ))}
-                      </div>
-                    )}
 
                     <textarea
                       value={comment}
@@ -1251,7 +1280,7 @@ export default function App() {
                 <div className="empty-feedback">
                   <div className="empty-icon">◌</div>
                   <strong>No feedback yet.</strong>
-                  <span>Tap a quick chip or type a comment right under the video.</span>
+                  <span>Pause the video and add comments at the exact timestamp.</span>
                 </div>
               ) : (
                 <div className="feedback-list">

@@ -74,6 +74,7 @@ export default function QcstarPortal({
   const [approvedShowVideos, setApprovedShowVideos] = useState([]);
   const [loadingQueue, setLoadingQueue] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [queueEpSearch, setQueueEpSearch] = useState('');
 
   // Manage Shows Page state (List, Edit Show Name, Edit Creator ID, End/Reopen Show)
   const [manageShowSearch, setManageShowSearch] = useState('');
@@ -207,6 +208,7 @@ export default function QcstarPortal({
   const handleSelectShowForQueue = async (showObj, initialSubTab = 'pending') => {
     setSelectedShowForQueue(showObj);
     setQueueSubTab(initialSubTab);
+    setQueueEpSearch('');
     setLoadingQueue(true);
 
     const { data, error } = await supabase
@@ -831,6 +833,26 @@ export default function QcstarPortal({
       return 0;
     });
 
+    // Filter queue episodes by Episode # or Name (handles 200+ episodes)
+    const normalizedQueueQuery = queueEpSearch
+      .trim()
+      .toLowerCase()
+      .replace(/^ep\s*/i, '');
+
+    const filteredPendingVideos = pendingVideos.filter(
+      (ep) =>
+        !normalizedQueueQuery ||
+        String(ep.episode_number).includes(normalizedQueueQuery) ||
+        (ep.ep_name || '').toLowerCase().includes(normalizedQueueQuery)
+    );
+
+    const filteredApprovedVideos = approvedShowVideos.filter(
+      (ep) =>
+        !normalizedQueueQuery ||
+        String(ep.episode_number).includes(normalizedQueueQuery) ||
+        (ep.ep_name || '').toLowerCase().includes(normalizedQueueQuery)
+    );
+
     return (
       <div style={{ maxWidth: '1060px', margin: '0 auto', padding: '20px' }}>
         {subView === 'creators' ? (
@@ -1285,17 +1307,47 @@ export default function QcstarPortal({
               </button>
             </div>
 
+            {/* Search by Episode Number or Name (handles 200+ episodes) */}
+            <div style={{ marginBottom: '14px', display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="Search by Episode # (e.g. 200) or Episode Name..."
+                value={queueEpSearch}
+                onChange={(e) => setQueueEpSearch(e.target.value)}
+                style={{ ...styles.input, maxWidth: '340px' }}
+              />
+              {queueEpSearch && (
+                <button
+                  type="button"
+                  onClick={() => setQueueEpSearch('')}
+                  className="secondary-button"
+                  style={{ padding: '8px 12px', fontSize: '12px' }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
             {loadingQueue ? (
               <p style={{ color: '#64748b' }}>Loading episodes...</p>
             ) : queueSubTab === 'pending' ? (
-              pendingVideos.length === 0 ? (
+              filteredPendingVideos.length === 0 ? (
                 <div style={styles.emptyBox}>
-                  <strong>All caught up! No pending videos to QC for {selectedShowForQueue.show_name}.</strong>
-                  <span>New or re-edited submissions will appear right at the top.</span>
+                  <strong>
+                    {queueEpSearch
+                      ? `No pending episode matching "${queueEpSearch}".`
+                      : `All caught up! No pending videos to QC for ${selectedShowForQueue.show_name}.`}
+                  </strong>
+                  <span>
+                    {queueEpSearch
+                      ? 'Try searching another episode number or clear the search.'
+                      : 'New or re-edited submissions will appear right at the top.'}
+                  </span>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {pendingVideos.map((ep, index) => {
+                  {filteredPendingVideos.map((ep, index) => {
                     const isReedited = Boolean(ep.reviewed_by) && ep.status === 'Pending';
                     return (
                       <div
@@ -1355,14 +1407,22 @@ export default function QcstarPortal({
                   })}
                 </div>
               )
-            ) : approvedShowVideos.length === 0 ? (
+            ) : filteredApprovedVideos.length === 0 ? (
               <div style={styles.emptyBox}>
-                <strong>No approved videos yet for {selectedShowForQueue.show_name}.</strong>
-                <span>Once an episode is approved in QC Studio, its Google Drive download link will appear here.</span>
+                <strong>
+                  {queueEpSearch
+                    ? `No approved episode matching "${queueEpSearch}".`
+                    : `No approved videos yet for ${selectedShowForQueue.show_name}.`}
+                </strong>
+                <span>
+                  {queueEpSearch
+                    ? 'Try searching another episode number or clear the search.'
+                    : 'Once an episode is approved in QC Studio, its Google Drive download link will appear here.'}
+                </span>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {approvedShowVideos.map((ep) => {
+                {filteredApprovedVideos.map((ep) => {
                   const { viewUrl, downloadUrl } = getDriveLinks(ep);
                   const hasDrive = Boolean(viewUrl || downloadUrl);
 
