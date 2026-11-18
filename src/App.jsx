@@ -33,7 +33,7 @@ export default function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminView, setAdminView] = useState("overview"); // 'overview' | 'qc' | 'calendar'
 
-  // QCstar navigation history with Undo + Redo support
+  // QCstar navigation history with Undo + Redo support (includes 'creators' view)
   const [qcstarNav, setQcstarNav] = useState({
     past: [],
     current: "home",
@@ -224,7 +224,7 @@ export default function App() {
       .eq("email", currentUser.email)
       .maybeSingle()
       .then(({ data, error }) => {
-        if (error || !data) return; // Keep existing session on network errors
+        if (error || !data) return;
         if (data.status !== "approved") {
           handleLogout();
         } else {
@@ -785,7 +785,8 @@ export default function App() {
       ) : currentUser.role === "qcstar" && qcstarView !== "studio" ? (
         /* QCSTAR HOME & TABS */
         <QcstarPortal
-          activeTab={qcstarView}
+          activeTab={qcstarView === "creators" ? "shows" : qcstarView}
+          isCreatorsView={qcstarView === "creators"}
           onNavigate={(nextTab) => {
             if (nextTab === "studio") {
               setActiveEpisode(null);

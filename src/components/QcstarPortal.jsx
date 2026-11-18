@@ -41,6 +41,7 @@ function generateCreatorCode() {
 
 export default function QcstarPortal({
   activeTab,
+  isCreatorsView,
   onNavigate,
   shows,
   onShowCreated,
@@ -80,11 +81,10 @@ export default function QcstarPortal({
   // Creators Directory View & List state
   const [creatorsList, setCreatorsList] = useState([]);
   const [loadingCreators, setLoadingCreators] = useState(false);
-  const [viewingCreatorsPage, setViewingCreatorsPage] = useState(false);
   const [creatorSearch, setCreatorSearch] = useState('');
   const [copiedTableCreatorId, setCopiedTableCreatorId] = useState(null);
 
-  // Create New Creator Modal state (opened from Creators Directory page)
+  // Create New Creator Modal state
   const [creatorModalOpen, setCreatorModalOpen] = useState(false);
   const [newCreatorName, setNewCreatorName] = useState('');
   const [newCreatorEmail, setNewCreatorEmail] = useState('');
@@ -123,7 +123,6 @@ export default function QcstarPortal({
     if (activeTab === 'shows') {
       fetchCreators();
     } else {
-      setViewingCreatorsPage(false);
       setSelectedShowForQueue(null);
     }
   }, [activeTab]);
@@ -361,7 +360,7 @@ export default function QcstarPortal({
     setNewShowDescription('');
     setLinkCreatorId('');
     setShowCreateModal(false);
-    setViewingCreatorsPage(false);
+    onNavigate('shows');
     alert(
       `Show "${createdShow.show_name}" created and linked to ${matchedCreator.creator_name} (${matchedCreator.creator_id})!`
     );
@@ -679,14 +678,14 @@ export default function QcstarPortal({
 
     return (
       <div style={{ maxWidth: '1040px', margin: '0 auto', padding: '20px' }}>
-        {viewingCreatorsPage ? (
+        {isCreatorsView ? (
           /* CREATORS DIRECTORY PAGE */
           <div className="panel">
             <div className="panel-heading">
               <div>
                 <button
                   type="button"
-                  onClick={() => setViewingCreatorsPage(false)}
+                  onClick={() => onNavigate('shows')}
                   className="secondary-button"
                   style={{ marginBottom: '10px', padding: '5px 10px', fontSize: '12px' }}
                 >
@@ -821,7 +820,7 @@ export default function QcstarPortal({
                   onClick={() => {
                     fetchCreators();
                     setCreatorSearch('');
-                    setViewingCreatorsPage(true);
+                    onNavigate('creators');
                   }}
                   className="secondary-button"
                   style={{ fontWeight: '700', borderColor: '#1e3a8a', color: '#1e3a8a' }}
@@ -1799,7 +1798,7 @@ const modalStyles = {
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: "center",
     zIndex: 1000,
     padding: '20px',
   },
