@@ -10,6 +10,64 @@ export default function Login({ onLoginSuccess, logoUrl }) {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
 
+  // App Install state (Laptop + Android + iOS)
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [platformType, setPlatformType] = useState('desktop'); // 'ios' | 'android' | 'desktop'
+
+  useEffect(() => {
+    const standalone =
+      window.matchMedia('(display-mode: standalone)').matches ||
+      window.navigator.standalone === true;
+
+    if (standalone) {
+      setIsInstalled(true);
+      return;
+    }
+
+    const ua = window.navigator.userAgent.toLowerCase();
+    if (/iphone|ipad|ipod/.test(ua)) {
+      setPlatformType('ios');
+    } else if (/android/.test(ua)) {
+      setPlatformType('android');
+    } else {
+      setPlatformType('desktop');
+    }
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    const handleInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      setShowInstallHelp(false);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  const handleInstallAppClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstalled(true);
+      }
+      setDeferredPrompt(null);
+    } else {
+      setShowInstallHelp((prev) => !prev);
+    }
+  };
+
   // Unified email lookup for Admin, QCstar, and Creator accounts
   const authenticateByEmail = async (rawEmail, fallbackName = '') => {
     const cleanEmail = (rawEmail || '').trim().toLowerCase();
@@ -127,7 +185,7 @@ export default function Login({ onLoginSuccess, logoUrl }) {
       if (mounted && authUser?.email) {
         const googleName =
           authUser.user_metadata?.full_name || authUser.user_metadata?.name || '';
-        await supabase.auth.signOut(); // Clear Supabase auth session after reading verified email
+        await supabase.auth.signOut();
         authenticateByEmail(authUser.email, googleName);
       }
     };
@@ -295,6 +353,53 @@ export default function Login({ onLoginSuccess, logoUrl }) {
                 {loading ? 'Signing In...' : '→ Sign In'}
               </button>
             </form>
+
+            {/* Install App Box for Laptop, Android & iPhone users */}
+            {!isInstalled && (
+              <div style={styles.installBox}>
+                <button
+                  type="button"
+                  onClick={handleInstallAppClick}
+                  style={styles.installBtn}
+                >
+                  <span>📲 Install GyanQC App</span>
+                  <span style={styles.installBadge}>Laptop &amp; Mobile</span>
+                </button>
+
+                {showInstallHelp && (
+                  <div style={styles.installGuide}>
+                    {platformType === 'ios' ? (
+                      <>
+                        <strong>Install on iPhone / iPad (Safari):</strong>
+                        <p style={styles.guideText}>
+                          1. Tap the <strong>Share</strong> icon (<strong>⍗</strong>) at the bottom of Safari.
+                          <br />
+                          2. Scroll down and tap <strong>"Add to Home Screen"</strong> → <strong>Add</strong>.
+                        </p>
+                      </>
+                    ) : platformType === 'android' ? (
+                      <>
+                        <strong>Install on Android (Chrome):</strong>
+                        <p style={styles.guideText}>
+                          1. Tap the <strong>⋮</strong> menu in the top-right corner of Chrome.
+                          <br />
+                          2. Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <strong>Install on Laptop / Desktop (Chrome or Edge):</strong>
+                        <p style={styles.guideText}>
+                          1. Click the <strong>Install icon (⊕)</strong> on the right side of the browser address bar.
+                          <br />
+                          2. Or open browser menu (<strong>⋮</strong>) → <strong>Save and share</strong> → <strong>Install GyanQC</strong>.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         ) : (
           <form onSubmit={handleRequestAccess} style={styles.form}>
@@ -466,5 +571,46 @@ const styles = {
     fontSize: '13px',
     cursor: 'pointer',
     marginTop: '4px',
+  },
+  installBox: {
+    marginTop: '18px',
+    paddingTop: '16px',
+    borderTop: '1px solid #e2e8f0',
+  },
+  installBtn: {
+    width: '100%',
+    padding: '10px 14px',
+    borderRadius: '8px',
+    border: '1px solid #bfdbfe',
+    backgroundColor: '#eff6ff',
+    color: '#1e3a8a',
+    fontSize: '13px',
+    fontWeight: '700',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    cursor: 'pointer',
+  },
+  installBadge: {
+    backgroundColor: '#1e3a8a',
+    color: '#ffffff',
+    fontSize: '11px',
+    padding: '2px 8px',
+    borderRadius: '999px',
+    fontWeight: '600',
+  },
+  installGuide: {
+    marginTop: '10px',
+    padding: '12px',
+    borderRadius: '8px',
+    backgroundColor: '#f8fafc',
+    border: '1px solid #cbd5e1',
+    fontSize: '12px',
+    color: '#1e293b',
+  },
+  guideText: {
+    margin: '6px 0 0',
+    lineHeight: 1.5,
+    color: '#475569',
   },
 };
