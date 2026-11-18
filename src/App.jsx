@@ -56,6 +56,40 @@ export default function App() {
   const [appLogoUrl, setAppLogoUrl] = useState("");
   const [totalPendingCount, setTotalPendingCount] = useState(0);
 
+  // Detect mobile viewport & keyboard open state
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 768 : false
+  );
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
+    const onFocusIn = (e) => {
+      const tag = e.target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") {
+        document.body.classList.add("keyboard-open");
+      }
+    };
+    const onFocusOut = () => {
+      setTimeout(() => {
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag !== "input" && tag !== "textarea" && tag !== "select") {
+          document.body.classList.remove("keyboard-open");
+        }
+      }, 120);
+    };
+    window.addEventListener("focusin", onFocusIn);
+    window.addEventListener("focusout", onFocusOut);
+    return () => {
+      window.removeEventListener("focusin", onFocusIn);
+      window.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
+
   // Unified QCstar + Admin navigation history
   const [qcstarNav, setQcstarNav] = useState({
     past: [],
@@ -770,42 +804,39 @@ export default function App() {
           onOpenMonthlyPlanner={() => navigateQcstar("monthly-planner")}
         />
       ) : (
-        <div className="qc-workspace">
-          {/* LEFT / TOP COLUMN: 1. PENDING EPISODES SWITCHER -> 2. VIDEO PLAYER */}
-          <section className="video-column" style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div className={`qc-workspace ${isMobile && videoUrl ? "studio-mobile-active" : ""}`}>
+          {/* LEFT / TOP COLUMN: 1. PENDING EPISODES SWITCHER -> 2. VIDEO PLAYER + INSTANT MOBILE BAR */}
+          <section className="video-column" style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {/* 1. PENDING EPISODES SWITCHER AT TOP OF VIDEO */}
             {activeEpisode && selectedShow && (
-              <div className="panel" style={{ padding: "14px 16px" }}>
+              <div className="panel" style={{ padding: isMobile ? "10px 12px" : "14px 16px" }}>
                 <div
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
                     gap: "10px",
-                    marginBottom: "10px",
+                    marginBottom: "8px",
                   }}
                 >
                   <div>
-                    <h3 style={{ margin: 0, fontSize: "15px", color: "#0f172a" }}>
-                      {selectedShow.show_name} — Pending Episodes ({pendingShowEpisodes.length})
+                    <h3 style={{ margin: 0, fontSize: isMobile ? "14px" : "15px", color: "#0f172a" }}>
+                      {selectedShow.show_name} — Pending ({pendingShowEpisodes.length})
                     </h3>
-                    <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#64748b" }}>
-                      Tap an episode to switch video instantly
-                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => fetchEpisodesForShow(selectedShow.id)}
                     className="secondary-button"
-                    style={{ padding: "5px 10px", fontSize: "12px", flexShrink: 0 }}
+                    style={{ padding: "4px 9px", fontSize: "11px", flexShrink: 0 }}
                   >
                     ↻ Refresh
                   </button>
                 </div>
 
                 {pendingShowEpisodes.length === 0 ? (
-                  <p style={{ fontSize: "13px", color: "#15803d", margin: 0, fontWeight: "600" }}>
-                    ✓ All submitted episodes for {selectedShow.show_name} have been approved!
+                  <p style={{ fontSize: "12px", color: "#15803d", margin: 0, fontWeight: "600" }}>
+                    ✓ All submitted episodes have been approved!
                   </p>
                 ) : (
                   <div
@@ -813,7 +844,7 @@ export default function App() {
                       display: "flex",
                       gap: "8px",
                       overflowX: "auto",
-                      paddingBottom: "4px",
+                      paddingBottom: "2px",
                     }}
                   >
                     {pendingShowEpisodes.map((ep) => {
@@ -826,38 +857,20 @@ export default function App() {
                           style={{
                             flexShrink: 0,
                             textAlign: "left",
-                            padding: "8px 12px",
-                            borderRadius: "9px",
+                            padding: "6px 10px",
+                            borderRadius: "8px",
                             border: isCurrent ? "2px solid #1e3a8a" : "1px solid #cbd5e1",
                             backgroundColor: isCurrent ? "#eff6ff" : "#f8fafc",
                             cursor: "pointer",
-                            minWidth: "155px",
+                            minWidth: "140px",
                           }}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "6px" }}>
-                            <strong style={{ fontSize: "13px", color: "#0f172a" }}>
-                              Ep {ep.episode_number}: {ep.ep_name || "Untitled"}
-                            </strong>
-                          </div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginTop: "4px" }}>
-                            <span style={{ fontSize: "11px", color: "#64748b" }}>
-                              {ep.scheduled_date || "No date"}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: "10px",
-                                fontWeight: "700",
-                                padding: "1px 6px",
-                                borderRadius: "999px",
-                                backgroundColor:
-                                  ep.status === "Changes Requested" ? "#fee2e2" : "#fef3c7",
-                                color:
-                                  ep.status === "Changes Requested" ? "#b91c1c" : "#92400e",
-                              }}
-                            >
-                              {ep.status}
-                            </span>
-                          </div>
+                          <strong style={{ fontSize: "12px", color: "#0f172a", display: "block" }}>
+                            Ep {ep.episode_number}: {ep.ep_name || "Untitled"}
+                          </strong>
+                          <span style={{ fontSize: "10px", color: "#64748b" }}>
+                            {ep.scheduled_date || "No date"} · {ep.status}
+                          </span>
                         </button>
                       );
                     })}
@@ -868,36 +881,29 @@ export default function App() {
 
             {/* 2. VIDEO PLAYER */}
             <div className="panel video-panel">
-              <div className="panel-heading">
+              <div className="panel-heading" style={{ marginBottom: isMobile ? "8px" : undefined }}>
                 <div>
-                  <h3>Video Review</h3>
-                  <p>
-                    {activeEpisode && selectedShow
-                      ? `Show: ${selectedShow.show_name} (${selectedShow.agency_name || selectedShow.creator_name || ""})`
-                      : "Upload any local video or paste a Google Drive link for quick QC."}
-                  </p>
+                  <h3 style={{ fontSize: isMobile ? "15px" : undefined }}>
+                    {videoName || "Video Review"}
+                  </h3>
+                  {!isMobile && (
+                    <p>
+                      {activeEpisode && selectedShow
+                        ? `Show: ${selectedShow.show_name} (${selectedShow.agency_name || selectedShow.creator_name || ""})`
+                        : "Upload any local video or paste a Google Drive link for quick QC."}
+                    </p>
+                  )}
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                   <button
                     className="secondary-button"
                     type="button"
                     onClick={() => setOverlayVisible((value) => !value)}
-                    style={{ padding: "5px 10px", fontSize: "12px" }}
+                    style={{ padding: "4px 9px", fontSize: "11px" }}
                   >
                     {overlayVisible ? "Hide Overlay" : "Show Overlay"}
                   </button>
-
-                  {currentUser.role === "admin" && (
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      onClick={() => setShowOverlayModal(true)}
-                      style={{ padding: "5px 10px", fontSize: "12px" }}
-                    >
-                      Change Overlay
-                    </button>
-                  )}
 
                   <span
                     className={`review-status ${status
@@ -1023,71 +1029,41 @@ export default function App() {
                 )}
               </div>
 
-              <div className="video-information">
-                <div>
-                  <strong>{videoName || "No video loaded"}</strong>
-                  <span>
-                    {videoUrl
-                      ? isBuffering
-                        ? "Buffering video stream..."
-                        : "Ready for quality review"
-                      : "Upload a local video or paste a Drive link above"}
-                  </span>
-                </div>
-
-                <button
-                  className="secondary-button"
-                  type="button"
-                  onClick={() => {
-                    setActiveEpisode(null);
-                    setVideoUrl("");
-                    setVideoName("");
-                    setDriveUrl("");
-                    setDriveError("");
-                    setIsBuffering(false);
-                    setCurrentTime(0);
+              {/* MOBILE SPLIT-SCREEN INLINE FEEDBACK BAR (STAYS VISIBLE ABOVE KEYBOARD WITH VIDEO) */}
+              {isMobile && videoUrl && (
+                <div
+                  style={{
+                    marginTop: "10px",
+                    paddingTop: "10px",
+                    borderTop: "1px solid #e2e8f0",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
                   }}
                 >
-                  {videoUrl ? "Change Video" : "Clear"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          {/* RIGHT / IMMEDIATELY BELOW VIDEO ON MOBILE: QC FEEDBACK BOX */}
-          <section className="right-column">
-            <div className="panel feedback-panel">
-              <div className="panel-heading">
-                <div>
-                  <h3>QC Feedback</h3>
-                  <p>Video auto-pauses when typing so your timestamp stays exact.</p>
-                </div>
-
-                <span className="feedback-count">{feedback.length}</span>
-              </div>
-
-              <div className="feedback-form">
-                <div className="current-time">
-                  <span>Current Video Timestamp</span>
-                  <strong>{formatTime(currentTime)}</strong>
-                </div>
-
-                {/* One-Tap Quick QC Issue Chips */}
-                {videoUrl && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                  {/* Horizontal scrollable quick QC chips */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "6px",
+                      overflowX: "auto",
+                      paddingBottom: "2px",
+                    }}
+                  >
                     {QUICK_QC_CHIPS.map((chip) => (
                       <button
                         key={chip}
                         type="button"
                         onClick={() => addFeedback(chip)}
                         style={{
-                          backgroundColor: "#f1f5f9",
-                          border: "1px solid #cbd5e1",
+                          flexShrink: 0,
+                          backgroundColor: "#eff6ff",
+                          border: "1px solid #bfdbfe",
                           borderRadius: "999px",
                           padding: "4px 10px",
                           fontSize: "11px",
-                          fontWeight: "600",
-                          color: "#1e293b",
+                          fontWeight: "700",
+                          color: "#1e3a8a",
                           cursor: "pointer",
                         }}
                       >
@@ -1095,31 +1071,170 @@ export default function App() {
                       </button>
                     ))}
                   </div>
-                )}
 
-                <textarea
-                  value={comment}
-                  onFocus={handleFeedbackFocus}
-                  onChange={(e) => setComment(e.target.value)}
-                  placeholder="Describe what needs to be corrected..."
-                  rows="2"
-                  style={{ fontSize: "16px" }}
-                />
+                  {/* Single-row Timestamp + Input + Add button so Video & Keyboard fit together */}
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      addFeedback();
+                    }}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        backgroundColor: "#0f172a",
+                        color: "#ffffff",
+                        padding: "8px 9px",
+                        borderRadius: "8px",
+                        fontSize: "12px",
+                        fontWeight: "800",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {formatTime(currentTime)}
+                    </span>
 
-                <button
-                  className="primary-button add-feedback-button"
-                  type="button"
-                  onClick={() => addFeedback()}
-                  disabled={!videoUrl || !comment.trim()}
-                >
-                  + Add Feedback at {formatTime(currentTime)}
-                </button>
-              </div>
+                    <input
+                      type="text"
+                      value={comment}
+                      onFocus={handleFeedbackFocus}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="Type QC feedback & press Enter..."
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        height: "38px",
+                        padding: "6px 10px",
+                        borderRadius: "8px",
+                        border: "1.5px solid #93c5fd",
+                        fontSize: "16px",
+                        backgroundColor: "#ffffff",
+                      }}
+                    />
 
-              <div className="timeline-heading">
-                <h4>Feedback Timeline</h4>
+                    <button
+                      type="submit"
+                      disabled={!comment.trim()}
+                      className="primary-button"
+                      style={{
+                        height: "38px",
+                        padding: "0 14px",
+                        fontSize: "13px",
+                        fontWeight: "700",
+                        flexShrink: 0,
+                      }}
+                    >
+                      + Add
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {!isMobile && (
+                <div className="video-information">
+                  <div>
+                    <strong>{videoName || "No video loaded"}</strong>
+                    <span>
+                      {videoUrl
+                        ? isBuffering
+                          ? "Buffering video stream..."
+                          : "Ready for quality review"
+                        : "Upload a local video or paste a Drive link above"}
+                    </span>
+                  </div>
+
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => {
+                      setActiveEpisode(null);
+                      setVideoUrl("");
+                      setVideoName("");
+                      setDriveUrl("");
+                      setDriveError("");
+                      setIsBuffering(false);
+                      setCurrentTime(0);
+                    }}
+                  >
+                    {videoUrl ? "Change Video" : "Clear"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* RIGHT / BELOW VIDEO COLUMN: FEEDBACK TIMELINE & APPROVE/REJECT ACTIONS */}
+          <section className="right-column">
+            <div className="panel feedback-panel">
+              {!isMobile && (
+                <>
+                  <div className="panel-heading">
+                    <div>
+                      <h3>QC Feedback</h3>
+                      <p>Video auto-pauses when typing so your timestamp stays exact.</p>
+                    </div>
+
+                    <span className="feedback-count">{feedback.length}</span>
+                  </div>
+
+                  <div className="feedback-form">
+                    <div className="current-time">
+                      <span>Current Video Timestamp</span>
+                      <strong>{formatTime(currentTime)}</strong>
+                    </div>
+
+                    {videoUrl && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                        {QUICK_QC_CHIPS.map((chip) => (
+                          <button
+                            key={chip}
+                            type="button"
+                            onClick={() => addFeedback(chip)}
+                            style={{
+                              backgroundColor: "#f1f5f9",
+                              border: "1px solid #cbd5e1",
+                              borderRadius: "999px",
+                              padding: "4px 10px",
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              color: "#1e293b",
+                              cursor: "pointer",
+                            }}
+                          >
+                            + {chip}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <textarea
+                      value={comment}
+                      onFocus={handleFeedbackFocus}
+                      onChange={(e) => setComment(e.target.value)}
+                      placeholder="Describe what needs to be corrected..."
+                      rows="2"
+                      style={{ fontSize: "16px" }}
+                    />
+
+                    <button
+                      className="primary-button add-feedback-button"
+                      type="button"
+                      onClick={() => addFeedback()}
+                      disabled={!videoUrl || !comment.trim()}
+                    >
+                      + Add Feedback at {formatTime(currentTime)}
+                    </button>
+                  </div>
+                </>
+              )}
+
+              <div className="timeline-heading" style={{ marginTop: isMobile ? 0 : undefined }}>
+                <h4>Feedback Timeline ({feedback.length})</h4>
                 <div className="timeline-actions">
-                  <span>{feedback.length} comments</span>
                   {feedback.length > 0 && (
                     <button
                       className="copy-feedback-button"
@@ -1136,7 +1251,7 @@ export default function App() {
                 <div className="empty-feedback">
                   <div className="empty-icon">◌</div>
                   <strong>No feedback yet.</strong>
-                  <span>Tap a quick chip above or type a comment at the current timestamp.</span>
+                  <span>Tap a quick chip or type a comment right under the video.</span>
                 </div>
               ) : (
                 <div className="feedback-list">
