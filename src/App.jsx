@@ -360,12 +360,20 @@ export default function App() {
   };
 
   const fetchShows = async () => {
+    try {
+      const cachedShows = JSON.parse(sessionStorage.getItem("gyanqc_shows_cache") || "null");
+      if (Array.isArray(cachedShows) && cachedShows.length > 0 && shows.length === 0) {
+        setShows(cachedShows);
+        if (!selectedShow) setSelectedShow(cachedShows[0]);
+      }
+    } catch {}
     const { data } = await supabase
       .from("qc_shows")
       .select("*")
       .order("created_at", { ascending: false });
 
     if (data) {
+      try { sessionStorage.setItem("gyanqc_shows_cache", JSON.stringify(data)); } catch {}
       setShows(data);
       fetchTotalPending(data);
       if (data.length > 0 && !selectedShow) {
@@ -1128,6 +1136,11 @@ export default function App() {
                         onWaiting={() => setIsBuffering(true)}
                         onCanPlay={() => setIsBuffering(false)}
                         onPlaying={() => setIsBuffering(false)}
+                        onCanPlayThrough={() => {
+                          if (nextSubmittedEp?.drive_file_id) {
+                            warmVideoToRam(nextSubmittedEp.drive_file_id, { priority: "low" });
+                          }
+                        }}
                         onTimeUpdate={() => {
                           const t = videoRef.current?.currentTime || 0;
                           const wholeSecond = Math.floor(t);
