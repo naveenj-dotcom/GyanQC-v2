@@ -293,22 +293,7 @@ export default function App() {
     });
   }, [qcstarView, feedbackHistory.future.length]);
 
-  // Background pre-warm previous & next episodes for smooth switching
-  useEffect(() => {
-    if (!activeEpisode || !Array.isArray(showEpisodes) || showEpisodes.length < 2) return;
-    const submitted = [...showEpisodes]
-      .filter((ep) => Boolean(ep.drive_file_id))
-      .sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0));
-    const idx = submitted.findIndex((ep) => ep.id === activeEpisode.id);
-    if (idx === -1) return;
-
-    const neighbors = [submitted[idx + 1], submitted[idx - 1]].filter(Boolean);
-    neighbors.forEach((ep) => {
-      warmDriveVideoToBlob(ep.drive_file_id, { swapIfActive: false });
-    });
-  }, [activeEpisode, showEpisodes]);
-
-  useEffect(() => {
+    useEffect(() => {
     const onKeyDown = (e) => {
       const tag = document.activeElement?.tagName?.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
@@ -456,7 +441,17 @@ export default function App() {
       setVideoUrl(cachedBlob);
       setIsBuffering(false);
     } else {
-      setVideoUrl(`${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`);
+      if (prefetchAbortRef.current) {
+      prefetchAbortRef.current.abort();
+      prefetchAbortRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.removeAttribute("src");
+      videoRef.current.load();
+    }
+    const cachedNext = videoBlobCacheRef.current.get(ep.drive_file_id);
+    setVideoUrl(cachedNext || `${VIDEO_PROXY_URL}?id=${ep.drive_file_id}`);
       warmDriveVideoToBlob(ep.drive_file_id, { swapIfActive: true });
     }
     setVideoName(`Ep ${ep.episode_number}: ${ep.ep_name || "Untitled"}`);
@@ -1108,7 +1103,19 @@ export default function App() {
                         willChange: "transform",
                       }}
                       onWaiting={() => setIsBuffering(true)}
-                      onCanPlay={() => setIsBuffering(false)}
+                      onCanPlay={() => {
+                        setIsBuffering(false);
+                        if (activeEpisode && Array.isArray(showEpisodes)) {
+                          const submitted = [...showEpisodes]
+                            .filter((item) => Boolean(item.drive_file_id))
+                            .sort((a, b) => (a.episode_number || 0) - (b.episode_number || 0));
+                          const idx = submitted.findIndex((item) => item.id === activeEpisode.id);
+                          const nextEp = idx >= 0 ? submitted[idx + 1] : null;
+                          if (nextEp?.drive_file_id) {
+                            prewarmNextEpisodeToRam(nextEp.drive_file_id);
+                          }
+                        }
+                      }}
                       onPlaying={() => setIsBuffering(false)}
                       onTimeUpdate={() => {
                         const t = videoRef.current?.currentTime || 0;
